@@ -36,12 +36,12 @@ export function PriceMasterTable({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="顧客ID・店舗名・商品名で検索"
-          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="field"
         />
         <select
           value={customerType}
           onChange={(event) => setCustomerType(event.target.value)}
-          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="field"
         >
           <option value="">種別すべて</option>
           <option value="bank">振込</option>
@@ -51,8 +51,8 @@ export function PriceMasterTable({
           表示件数: {rows.length}
         </div>
       </div>
-      <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-        <table className="min-w-full text-left text-sm">
+      <div className="table-scroll">
+        <table className="min-w-[920px] text-left text-sm">
           <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
             <tr>
               <th className="px-4 py-3">顧客ID</th>

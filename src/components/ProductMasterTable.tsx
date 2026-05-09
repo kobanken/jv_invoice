@@ -2,8 +2,8 @@ import type { Product } from "@/types";
 
 export function ProductMasterTable({ products }: { products: Product[] }) {
   return (
-    <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-      <table className="min-w-full text-left text-sm">
+    <div className="table-scroll">
+      <table className="min-w-[920px] text-left text-sm">
         <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
           <tr>
             <th className="px-4 py-3">商品ID</th>

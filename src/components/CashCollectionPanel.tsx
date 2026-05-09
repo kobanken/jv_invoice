@@ -30,8 +30,8 @@ export function CashCollectionPanel({
   }, [collectionAmounts, customers, invoices, records]);
 
   return (
-    <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-      <table className="min-w-full text-left text-sm">
+    <div className="table-scroll">
+      <table className="min-w-[920px] text-left text-sm">
         <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
           <tr>
             <th className="px-4 py-3">顧客名</th>
@@ -60,7 +60,7 @@ export function CashCollectionPanel({
                       [row.collectionId]: Number(event.target.value),
                     }))
                   }
-                  className="w-32 rounded-md border border-slate-300 px-3 py-2"
+                  className="field w-32"
                 />
               </td>
               <td className={`px-4 py-3 font-semibold ${row.difference === 0 ? "text-teal-700" : "text-amber-700"}`}>

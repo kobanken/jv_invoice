@@ -1,10 +1,10 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7f8fa;
+  --background: #f4f6f8;
   --foreground: #111827;
   --muted: #667085;
-  --line: #d7dce2;
+  --line: #d9dee7;
   --accent: #0f766e;
 }
 
@@ -24,6 +24,41 @@ input,
 select,
 textarea {
   font: inherit;
+}
+
+input,
+select,
+textarea {
+  outline-color: #0f766e;
+}
+
+::selection {
+  background: #ccfbf1;
+}
+
+.surface {
+  border: 1px solid var(--line);
+  background: #ffffff;
+  border-radius: 8px;
+}
+
+.field {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  border-radius: 8px;
+}
+
+.table-scroll th {
+  white-space: nowrap;
 }
 
 @media print {

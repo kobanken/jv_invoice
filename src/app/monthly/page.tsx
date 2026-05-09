@@ -14,8 +14,8 @@ export default function MonthlyPage() {
         title="月次集計"
         description="顧客名を表示せず、振込合計・現金合計・総合計だけを月別に確認します。"
       />
-      <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-        <table className="min-w-full text-left text-sm">
+      <div className="table-scroll">
+        <table className="min-w-[920px] text-left text-sm">
           <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
             <tr>
               <th className="px-4 py-3">対象月</th>

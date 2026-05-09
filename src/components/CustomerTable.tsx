@@ -39,12 +39,12 @@ export function CustomerTable({ customerType, customers }: Props) {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="顧客ID・店舗名で検索"
-          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="field"
         />
         <select
           value={closingDay}
           onChange={(event) => setClosingDay(event.target.value)}
-          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="field"
         >
           <option value="">締め日すべて</option>
           <option value="15">15日締め</option>
@@ -54,7 +54,7 @@ export function CustomerTable({ customerType, customers }: Props) {
         <select
           value={deliveryMethod}
           onChange={(event) => setDeliveryMethod(event.target.value)}
-          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="field"
         >
           <option value="">請求書区分すべて</option>
           <option value="gmail_pdf">Gmail PDF</option>
@@ -65,15 +65,15 @@ export function CustomerTable({ customerType, customers }: Props) {
         <select
           value={sortKey}
           onChange={(event) => setSortKey(event.target.value as "customerId" | "storeName")}
-          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="field"
         >
           <option value="customerId">顧客ID順</option>
           <option value="storeName">店舗名順</option>
         </select>
       </div>
 
-      <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-        <table className="min-w-full text-left text-sm">
+      <div className="table-scroll">
+        <table className="min-w-[920px] text-left text-sm">
           <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
             <tr>
               <th className="px-4 py-3">顧客ID</th>

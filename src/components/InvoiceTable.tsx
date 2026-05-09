@@ -45,33 +45,33 @@ export function InvoiceTable({
           type="month"
           value={targetMonth}
           onChange={(event) => setTargetMonth(event.target.value)}
-          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="field"
           aria-label={`${title} 対象月`}
         />
-        <select value={closingDay} onChange={(event) => setClosingDay(event.target.value)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+        <select value={closingDay} onChange={(event) => setClosingDay(event.target.value)} className="field">
           <option value="">締め日すべて</option>
           <option value="15">15日締め</option>
           <option value="20">20日締め</option>
           <option value="endOfMonth">月末締め</option>
         </select>
-        <select value={deliveryMethod} onChange={(event) => setDeliveryMethod(event.target.value)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+        <select value={deliveryMethod} onChange={(event) => setDeliveryMethod(event.target.value)} className="field">
           <option value="">請求書区分すべて</option>
           <option value="gmail_pdf">Gmail PDF</option>
           <option value="line">LINE</option>
           <option value="hand_delivery">手渡し</option>
           <option value="postal">郵送</option>
         </select>
-        <select value={issueStatus} onChange={(event) => setIssueStatus(event.target.value)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+        <select value={issueStatus} onChange={(event) => setIssueStatus(event.target.value)} className="field">
           <option value="">発行状況すべて</option>
           <option value="not_issued">未発行</option>
           <option value="issued">発行済み</option>
         </select>
-        <select value={deliveryStatus} onChange={(event) => setDeliveryStatus(event.target.value)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+        <select value={deliveryStatus} onChange={(event) => setDeliveryStatus(event.target.value)} className="field">
           <option value="">送付状況すべて</option>
           <option value="not_delivered">未送付</option>
           <option value="delivered">送付済み</option>
         </select>
-        <select value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+        <select value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value)} className="field">
           <option value="">入金/集金すべて</option>
           <option value="unpaid">未</option>
           <option value="partial">一部</option>
@@ -79,8 +79,8 @@ export function InvoiceTable({
         </select>
       </div>
 
-      <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-        <table className="min-w-full text-left text-sm">
+      <div className="table-scroll">
+        <table className="min-w-[920px] text-left text-sm">
           <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
             <tr>
               <th className="px-4 py-3">請求ID</th>

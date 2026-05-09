@@ -30,7 +30,7 @@ export function InvoicePreview({
 
   return (
     <section className="grid gap-6 xl:grid-cols-[320px_1fr]">
-      <div className="no-print rounded-md border border-slate-200 bg-white p-5">
+      <div className="surface no-print p-5">
         <h3 className="text-base font-bold">表示条件</h3>
         <div className="mt-4 space-y-4">
           <label className="block text-sm font-semibold">
@@ -38,7 +38,7 @@ export function InvoicePreview({
             <select
               value={customerId}
               onChange={(event) => handleCustomerChange(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-normal"
+              className="field mt-1 w-full font-normal"
             >
               {customers.map((customer) => (
                 <option key={customer.customerId} value={customer.customerId}>
@@ -53,7 +53,7 @@ export function InvoicePreview({
               type="month"
               value={targetMonth}
               onChange={(event) => setTargetMonth(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-normal"
+              className="field mt-1 w-full font-normal"
             />
           </label>
           <label className="block text-sm font-semibold">
@@ -61,7 +61,7 @@ export function InvoicePreview({
             <select
               value={closingDay}
               onChange={(event) => setClosingDay(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-normal"
+              className="field mt-1 w-full font-normal"
             >
               <option value="15">15日締め</option>
               <option value="20">20日締め</option>
@@ -99,7 +99,7 @@ export function InvoicePreview({
             <p className="mt-1 text-sm">{selectedCustomer?.storeName}</p>
             <p className="mt-1 text-sm text-slate-600">顧客ID: {selectedCustomer?.customerId}</p>
           </div>
-          <div className="rounded-md border border-slate-300 p-4 text-right">
+          <div className="rounded-md border border-slate-300 bg-slate-50 p-4 text-right">
             <p className="text-sm text-slate-500">ご請求金額</p>
             <p className="mt-2 text-3xl font-bold">{formatCurrencyJPY(total)}</p>
           </div>

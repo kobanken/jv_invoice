@@ -13,7 +13,7 @@ export function StatusBadge({
   tone?: keyof typeof toneClass;
 }) {
   return (
-    <span className={`inline-flex rounded px-2 py-1 text-xs font-semibold ${toneClass[tone]}`}>
+    <span className={`inline-flex whitespace-nowrap rounded px-2 py-1 text-xs font-semibold ${toneClass[tone]}`}>
       {children}
     </span>
   );

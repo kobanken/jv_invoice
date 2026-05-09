@@ -31,7 +31,7 @@ export function PaymentMatchingPanel({
 
   return (
     <section className="grid gap-6 xl:grid-cols-[420px_1fr]">
-      <div className="rounded-md border border-slate-200 bg-white p-5">
+      <div className="surface p-5">
         <h3 className="text-base font-bold">入金情報入力</h3>
         <div className="mt-4 space-y-4">
           <label className="block text-sm font-semibold">
@@ -40,7 +40,7 @@ export function PaymentMatchingPanel({
               type="date"
               value={paymentDate}
               onChange={(event) => setPaymentDate(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-normal"
+              className="field mt-1 w-full font-normal"
             />
           </label>
           <label className="block text-sm font-semibold">
@@ -48,7 +48,7 @@ export function PaymentMatchingPanel({
             <input
               value={transferName}
               onChange={(event) => setTransferName(event.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-normal"
+              className="field mt-1 w-full font-normal"
             />
           </label>
           <label className="block text-sm font-semibold">
@@ -57,7 +57,7 @@ export function PaymentMatchingPanel({
               type="number"
               value={amount}
               onChange={(event) => setAmount(Number(event.target.value))}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 font-normal"
+              className="field mt-1 w-full font-normal"
             />
           </label>
           <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
@@ -66,8 +66,8 @@ export function PaymentMatchingPanel({
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
-        <table className="min-w-full text-left text-sm">
+      <div className="table-scroll">
+        <table className="min-w-[920px] text-left text-sm">
           <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
             <tr>
               <th className="px-4 py-3">候補</th>
