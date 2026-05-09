@@ -116,8 +116,8 @@ export function InvoiceTable({
                 </td>
                 <td className="px-4 py-3">{formatPaymentStatus(invoice.paymentStatus)}</td>
                 <td className="px-4 py-3">
-                  <Link href="/todo/phase2" className="text-sm font-semibold text-teal-700 hover:text-teal-900">
-                    プレビュー予定
+                  <Link href="/invoice-preview" className="text-sm font-semibold text-teal-700 hover:text-teal-900">
+                    プレビュー
                   </Link>
                 </td>
               </tr>

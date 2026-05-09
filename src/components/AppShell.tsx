@@ -11,9 +11,9 @@ const navGroups = [
     permission: "bank",
     items: [
       { label: "顧客管理", href: "/bank/customers", permission: "bank" },
+      { label: "売上入力", href: "/bank/sales", permission: "bank" },
       { label: "請求一覧", href: "/bank/invoices", permission: "bank" },
-      { label: "売上入力", href: "/todo/phase2", permission: "bank", todo: true },
-      { label: "入金確認", href: "/todo/phase2", permission: "bank", todo: true },
+      { label: "入金確認", href: "/bank/payments", permission: "bank" },
     ],
   },
   {
@@ -21,24 +21,24 @@ const navGroups = [
     permission: "cash",
     items: [
       { label: "顧客管理", href: "/cash/customers", permission: "cash" },
+      { label: "売上入力", href: "/cash/sales", permission: "cash" },
       { label: "請求一覧", href: "/cash/invoices", permission: "cash" },
-      { label: "売上入力", href: "/todo/phase2", permission: "cash", todo: true },
-      { label: "集金確認", href: "/todo/phase2", permission: "cash", todo: true },
+      { label: "集金確認", href: "/cash/collections", permission: "cash" },
     ],
   },
   {
     title: "マスタ管理",
     permission: "master",
     items: [
-      { label: "商品マスタ", href: "/todo/phase2", permission: "master", todo: true },
-      { label: "単価マスタ", href: "/todo/phase2", permission: "master", todo: true },
+      { label: "商品マスタ", href: "/masters/products", permission: "master" },
+      { label: "単価マスタ", href: "/masters/prices", permission: "master" },
     ],
   },
   {
     title: "",
     items: [
       { label: "月次集計", href: "/monthly", permission: "monthly" },
-      { label: "請求書プレビュー", href: "/todo/phase2", permission: "invoicePreview", todo: true },
+      { label: "請求書プレビュー", href: "/invoice-preview", permission: "invoicePreview" },
     ],
   },
 ];
@@ -70,7 +70,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         className="flex items-center justify-between rounded-md px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
                       >
                         <span>{item.label}</span>
-                        {item.todo ? <span className="text-[10px] text-slate-400">TODO</span> : null}
                       </Link>
                     );
                   })}

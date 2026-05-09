@@ -1,4 +1,13 @@
+import type { CollectionStatus } from "@/types";
+
 export function calculateCashCollectionDifference(invoiceAmount: number, collectedAmount: number) {
-  // TODO Phase 2: 差額に応じた集金状況の自動判定を追加する。
   return collectedAmount - invoiceAmount;
+}
+
+export function resolveCashCollectionStatus(invoiceAmount: number, collectedAmount: number): CollectionStatus {
+  const difference = calculateCashCollectionDifference(invoiceAmount, collectedAmount);
+  if (collectedAmount === 0) return "not_collected";
+  if (difference === 0) return "collected";
+  if (difference < 0) return "partial";
+  return "over_collected";
 }
