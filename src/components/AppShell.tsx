@@ -33,6 +33,7 @@ const navGroups = [
     title: "マスタ管理",
     permission: "master",
     items: [
+      { label: "Phase 2 API", href: "/phase2", permission: "master" },
       { label: "商品マスタ", href: "/masters/products", permission: "master" },
       { label: "単価マスタ", href: "/masters/prices", permission: "master" },
     ],

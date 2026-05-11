@@ -3,21 +3,40 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { bankInvoices } from "@/data/bank";
 import { cashInvoices } from "@/data/cash";
-import { buildDashboardMetrics } from "@/lib/aggregates";
+import { currentUserRole } from "@/config/permissions";
+import { buildDashboardMetrics, getVisibleTotalLabel } from "@/lib/aggregates";
 import { formatCurrencyJPY } from "@/lib/format";
 
 const targetMonth = "2026-05";
 
 export default function DashboardPage() {
-  const metrics = buildDashboardMetrics(bankInvoices, cashInvoices, targetMonth);
+  const metrics = buildDashboardMetrics(bankInvoices, cashInvoices, targetMonth, currentUserRole);
   const items = [
-    { label: "振込請求合計", value: formatCurrencyJPY(metrics.bankTotal), caption: "振込顧客のみ" },
-    { label: "現金請求合計", value: formatCurrencyJPY(metrics.cashTotal), caption: "現金顧客のみ" },
-    { label: "総請求合計", value: formatCurrencyJPY(metrics.total), caption: "振込 + 現金" },
+    metrics.showBank
+      ? {
+          label: `${getVisibleTotalLabel(currentUserRole, "bank")}請求`,
+          value: formatCurrencyJPY(metrics.bankTotal),
+          caption: currentUserRole === "viewer" ? "匿名化した区分Aのみ" : "振込顧客のみ",
+        }
+      : null,
+    metrics.showCash
+      ? {
+          label: `${getVisibleTotalLabel(currentUserRole, "cash")}請求`,
+          value: formatCurrencyJPY(metrics.cashTotal),
+          caption: currentUserRole === "viewer" ? "匿名化した区分Bのみ" : "現金顧客のみ",
+        }
+      : null,
+    metrics.showBank && metrics.showCash
+      ? {
+          label: "総請求合計",
+          value: formatCurrencyJPY(metrics.total),
+          caption: currentUserRole === "viewer" ? "匿名化した全区分合計" : "振込 + 現金",
+        }
+      : null,
     { label: "未送付件数", value: `${metrics.undeliveredCount}件`, caption: "送付状況が未送付" },
-    { label: "未入金件数", value: `${metrics.unpaidBankCount}件`, caption: "振込請求の未入金" },
-    { label: "未集金件数", value: `${metrics.uncollectedCashCount}件`, caption: "現金請求の未集金" },
-  ];
+    metrics.showBank ? { label: "未入金件数", value: `${metrics.unpaidBankCount}件`, caption: "振込請求の未入金" } : null,
+    metrics.showCash ? { label: "未集金件数", value: `${metrics.uncollectedCashCount}件`, caption: "現金請求の未集金" } : null,
+  ].filter((item): item is { label: string; value: string; caption: string } => item !== null);
   const deliveryItems = [
     { label: "Gmail PDF対象", value: metrics.gmailPdfCount },
     { label: "LINE対象", value: metrics.lineCount },
