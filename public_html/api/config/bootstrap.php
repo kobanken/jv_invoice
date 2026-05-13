@@ -3,20 +3,22 @@ declare(strict_types=1);
 
 error_reporting(E_ALL);
 
-$privateConfig = dirname(__DIR__, 3) . '/jv_invoice_config.php';
-if (is_readable($privateConfig)) {
-    $privateValues = require $privateConfig;
-    if (is_array($privateValues)) {
-        foreach ($privateValues as $key => $value) {
-            if (getenv((string) $key) === false) {
-                putenv($key . '=' . $value);
-                $_ENV[$key] = $value;
-            }
-        }
+$configCandidates = [
+    dirname(__DIR__, 4) . '/jv_invoice_config.php',
+    dirname(__DIR__, 3) . '/jv_invoice_config.php',
+    dirname(__DIR__, 2) . '/jv_invoice_config.php',
+];
+
+foreach ($configCandidates as $privateConfig) {
+    if (is_readable($privateConfig)) {
+        load_php_config($privateConfig);
+        break;
     }
 }
 
+load_env_file(dirname(__DIR__, 4) . '/.env');
 load_env_file(dirname(__DIR__, 3) . '/.env');
+load_env_file(dirname(__DIR__, 2) . '/.env');
 load_env_file(__DIR__ . '/.env');
 
 $appEnv = env_value('APP_ENV', 'production');
@@ -43,6 +45,21 @@ function env_value(string $key, ?string $default = null): ?string
         return $default;
     }
     return $value;
+}
+
+function load_php_config(string $path): void
+{
+    $privateValues = require $path;
+    if (!is_array($privateValues)) {
+        return;
+    }
+
+    foreach ($privateValues as $key => $value) {
+        if (getenv((string) $key) === false) {
+            putenv($key . '=' . $value);
+            $_ENV[$key] = $value;
+        }
+    }
 }
 
 function load_env_file(string $path): void

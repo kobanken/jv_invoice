@@ -1,16 +1,29 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
-import { bankInvoices } from "@/data/bank";
-import { cashInvoices } from "@/data/cash";
-import { currentUserRole } from "@/config/permissions";
+import { bankCustomers, bankInvoices } from "@/data/bank";
+import { cashCustomers, cashInvoices } from "@/data/cash";
+import { canSeeCustomerType, currentUserRole } from "@/config/permissions";
+import { useLiveCustomers } from "@/lib/api/customers";
 import { buildDashboardMetrics, getVisibleTotalLabel } from "@/lib/aggregates";
 import { formatCurrencyJPY } from "@/lib/format";
+import type { Customer, InvoiceDeliveryMethod } from "@/types";
 
-const targetMonth = "2026-05";
+const initialCustomers: Customer[] = [...bankCustomers, ...cashCustomers];
+const initialTargetMonth = "2026-05";
 
 export default function DashboardPage() {
+  const [targetMonth, setTargetMonth] = useState(initialTargetMonth);
+  const { customers, loading: customersLoading, error: customersError } = useLiveCustomers(undefined, initialCustomers);
   const metrics = buildDashboardMetrics(bankInvoices, cashInvoices, targetMonth, currentUserRole);
+  const visibleCustomers = useMemo(() => {
+    return customers.filter((customer) => canSeeCustomerType(currentUserRole, customer.customerType));
+  }, [customers]);
+  const bankCustomerCount = visibleCustomers.filter((customer) => customer.customerType === "bank").length;
+  const cashCustomerCount = visibleCustomers.filter((customer) => customer.customerType === "cash").length;
   const items = [
     metrics.showBank
       ? {
@@ -37,18 +50,23 @@ export default function DashboardPage() {
     metrics.showBank ? { label: "未入金件数", value: `${metrics.unpaidBankCount}件`, caption: "振込請求の未入金" } : null,
     metrics.showCash ? { label: "未集金件数", value: `${metrics.uncollectedCashCount}件`, caption: "現金請求の未集金" } : null,
   ].filter((item): item is { label: string; value: string; caption: string } => item !== null);
+  const customerItems = [
+    metrics.showBank ? { label: "振込顧客数", value: `${bankCustomerCount}件`, caption: "顧客マスタの振込顧客" } : null,
+    metrics.showCash ? { label: "現金顧客数", value: `${cashCustomerCount}件`, caption: "顧客マスタの現金顧客" } : null,
+    { label: "登録顧客合計", value: `${visibleCustomers.length}件`, caption: "権限で表示可能な顧客" },
+  ].filter((item): item is { label: string; value: string; caption: string } => item !== null);
   const deliveryItems = [
-    { label: "Gmail PDF対象", value: metrics.gmailPdfCount },
-    { label: "LINE対象", value: metrics.lineCount },
-    { label: "郵送対象", value: metrics.postalCount },
-    { label: "手渡し対象", value: metrics.handDeliveryCount },
+    { label: "Gmail PDF対象", value: countCustomersByDeliveryMethod(visibleCustomers, "gmail_pdf") },
+    { label: "LINE対象", value: countCustomersByDeliveryMethod(visibleCustomers, "line") },
+    { label: "郵送対象", value: countCustomersByDeliveryMethod(visibleCustomers, "postal") },
+    { label: "手渡し対象", value: countCustomersByDeliveryMethod(visibleCustomers, "hand_delivery") },
   ];
 
   return (
     <AppShell>
       <PageHeader
         title="ダッシュボード"
-        description="対象月ごとの請求・送付・入金/集金ステータスをモックデータで確認します。"
+        description="対象月ごとの請求・送付・入金/集金ステータスを確認します。"
       />
       <div className="surface mb-6 flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -59,13 +77,31 @@ export default function DashboardPage() {
           <label className="text-sm font-semibold text-slate-700" htmlFor="target-month">
             対象月
           </label>
-          <input id="target-month" type="month" defaultValue={targetMonth} className="field min-w-40" />
-          <StatusBadge tone="teal">モック集計</StatusBadge>
+          <input
+            id="target-month"
+            type="month"
+            value={targetMonth}
+            onChange={(event) => setTargetMonth(event.target.value)}
+            className="field min-w-40"
+          />
+          <StatusBadge tone={customersError ? "amber" : "teal"}>
+            {customersLoading ? "読込中" : customersError ? "既存データ" : "集計"}
+          </StatusBadge>
         </div>
       </div>
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {items.map((item) => (
+          <div key={item.label} className="surface px-5 py-4">
+            <p className="text-sm font-semibold text-slate-500">{item.label}</p>
+            <p className="mt-2 text-2xl font-bold tracking-normal lg:text-3xl">{item.value}</p>
+            <p className="mt-2 text-xs text-slate-500">{item.caption}</p>
+          </div>
+        ))}
+      </section>
+
+      <section className="mt-8 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {customerItems.map((item) => (
           <div key={item.label} className="surface px-5 py-4">
             <p className="text-sm font-semibold text-slate-500">{item.label}</p>
             <p className="mt-2 text-2xl font-bold tracking-normal lg:text-3xl">{item.value}</p>
@@ -92,4 +128,8 @@ export default function DashboardPage() {
       </section>
     </AppShell>
   );
+}
+
+function countCustomersByDeliveryMethod(customers: Customer[], method: InvoiceDeliveryMethod) {
+  return customers.filter((customer) => customer.invoiceDeliveryMethod === method).length;
 }

@@ -18,6 +18,7 @@ export async function apiGet<T>(path: string, params?: Record<string, string | n
       query.set(key, String(value));
     }
   });
+  query.set("_ts", String(Date.now()));
   const suffix = query.toString() ? `?${query.toString()}` : "";
   return apiRequest<T>(`${path}${suffix}`);
 }
@@ -46,9 +47,11 @@ export async function apiDelete<T>(path: string, body: unknown): Promise<T> {
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
+    cache: "no-store",
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      "Cache-Control": "no-store",
       ...(init?.headers ?? {}),
     },
   });

@@ -8,8 +8,8 @@ export default function BankSalesPage() {
   return (
     <AppShell>
       <PageHeader
-        title="振込売上入力"
-        description="振込顧客だけを対象に、顧客別単価マスタから単価を自動反映して明細を作成します。"
+        title="振込個別売上調整"
+        description="通常の横型納品入力とは別に、振込顧客の個別明細や調整明細を追加します。"
       />
       <SalesEntryForm
         customerType="bank"

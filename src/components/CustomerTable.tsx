@@ -1,12 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { BankCustomer, CashCustomer, ClosingDay, Customer } from "@/types";
+import type { ClosingDay, Customer, CustomerType } from "@/types";
+import { useLiveCustomers } from "@/lib/api/customers";
 import { formatClosingDay, formatDeliveryMethod } from "@/lib/format";
 
-type Props =
-  | { customerType: "bank"; customers: BankCustomer[] }
-  | { customerType: "cash"; customers: CashCustomer[] };
+type Props = {
+  customerType: CustomerType;
+  customers: Customer[];
+};
 
 function matchesClosingDay(customerClosingDay: ClosingDay, selected: string) {
   if (!selected) return true;
@@ -14,13 +16,14 @@ function matchesClosingDay(customerClosingDay: ClosingDay, selected: string) {
 }
 
 export function CustomerTable({ customerType, customers }: Props) {
+  const { customers: liveCustomers, loading, error } = useLiveCustomers(customerType, customers);
   const [query, setQuery] = useState("");
   const [closingDay, setClosingDay] = useState("");
   const [deliveryMethod, setDeliveryMethod] = useState("");
   const [sortKey, setSortKey] = useState<"customerId" | "storeName">("customerId");
 
   const filteredCustomers = useMemo(() => {
-    return [...customers]
+    return [...liveCustomers]
       .filter((customer) => {
         const text = `${customer.customerId} ${customer.storeName} ${customer.billingName} ${customer.notes}`.toLowerCase();
         return (
@@ -30,7 +33,7 @@ export function CustomerTable({ customerType, customers }: Props) {
         );
       })
       .sort((a, b) => String(a[sortKey]).localeCompare(String(b[sortKey]), "ja"));
-  }, [closingDay, customers, deliveryMethod, query, sortKey]);
+  }, [closingDay, deliveryMethod, liveCustomers, query, sortKey]);
 
   return (
     <section className="space-y-4">
@@ -115,8 +118,9 @@ export function CustomerTable({ customerType, customers }: Props) {
         </table>
       </div>
       <p className="text-xs text-slate-500">
-        表示件数: {filteredCustomers.length} / {customers.length}
-        {customerType === "cash" ? "。現金顧客は cash データソースのみを参照しています。" : ""}
+        表示件数: {filteredCustomers.length} / {liveCustomers.length}
+        {loading ? "。顧客マスタを読み込み中です。" : ""}
+        {error ? `。API取得失敗: ${error}` : ""}
       </p>
     </section>
   );

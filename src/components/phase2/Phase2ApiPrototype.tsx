@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CustomerSearchField, type CustomerSearchOption } from "@/components/CustomerSearchField";
 import type {
   ApiCustomer,
   ApiPrice,
@@ -12,7 +13,7 @@ import type {
   PriceCategory,
 } from "@/types/api";
 import { apiBaseUrl, apiDelete, apiGet, apiPost, apiPut } from "@/lib/api/client";
-import { formatApiDeliveryMethod, formatPaymentType, formatPriceCategory } from "@/lib/api/format";
+import { formatApiClosingDay, formatApiDeliveryMethod, formatPaymentType, formatPriceCategory } from "@/lib/api/format";
 import { formatCurrencyJPY } from "@/lib/format";
 
 type TabKey = "customers" | "stores" | "prices" | "deliveries" | "details" | "summary";
@@ -26,6 +27,20 @@ const tabs: { key: TabKey; label: string }[] = [
   { key: "summary", label: "請求集計" },
 ];
 
+const tabsWithTargetSelector: TabKey[] = ["deliveries", "details", "summary"];
+
+const closingDayOptions = [
+  { value: 15, label: "15日" },
+  { value: 20, label: "20日" },
+  { value: 31, label: "月末" },
+];
+
+const deliveryEntryCount = 20;
+
+function createEmptyDeliveryEntries() {
+  return Array.from({ length: deliveryEntryCount }, () => "");
+}
+
 const emptyCustomer = {
   customer_code: "",
   name: "",
@@ -37,6 +52,7 @@ const emptyCustomer = {
   address: "",
   email: "",
   line_name: "",
+  bank_transfer_name: "",
   note: "",
 };
 
@@ -73,6 +89,7 @@ export function Phase2ApiPrototype() {
 
   const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId);
   const selectedStore = stores.find((store) => store.id === selectedStoreId);
+  const shouldShowTargetSelector = tabsWithTargetSelector.includes(activeTab);
 
   const loadBaseData = useCallback(async () => {
     const [nextCustomers, nextStores, nextPrices] = await Promise.all([
@@ -83,7 +100,7 @@ export function Phase2ApiPrototype() {
     setCustomers(nextCustomers);
     setStores(nextStores);
     setPrices(nextPrices);
-    setSelectedCustomerId((current) => current || nextCustomers[0]?.id || 0);
+    setSelectedCustomerId((current) => current);
   }, []);
 
   const loadDerivedData = useCallback(async () => {
@@ -158,16 +175,18 @@ export function Phase2ApiPrototype() {
         {error ? <p className="mt-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p> : null}
       </div>
 
-      <TargetSelector
-        customers={customers}
-        stores={stores}
-        selectedCustomerId={selectedCustomerId}
-        selectedStoreId={selectedStoreId}
-        billingMonth={billingMonth}
-        onCustomerChange={setSelectedCustomerId}
-        onStoreChange={setSelectedStoreId}
-        onBillingMonthChange={setBillingMonth}
-      />
+      {shouldShowTargetSelector ? (
+        <TargetSelector
+          customers={customers}
+          stores={stores}
+          selectedCustomerId={selectedCustomerId}
+          selectedStoreId={selectedStoreId}
+          billingMonth={billingMonth}
+          onCustomerChange={setSelectedCustomerId}
+          onStoreChange={setSelectedStoreId}
+          onBillingMonthChange={setBillingMonth}
+        />
+      ) : null}
 
       {activeTab === "customers" ? (
         <CustomerPanel customers={customers} onReload={loadBaseData} runAction={runAction} />
@@ -232,23 +251,23 @@ function TargetSelector({
   onBillingMonthChange: (month: string) => void;
 }) {
   const customerStores = stores.filter((store) => store.customer_id === selectedCustomerId);
+  const customerOptions = useMemo<CustomerSearchOption<number>[]>(() => {
+    return customers.map((customer) => ({
+      value: customer.id,
+      label: `${customer.customer_code} ${customer.name}`,
+      keywords: `${customer.name} ${customer.customer_code} ${customer.email ?? ""} ${customer.line_name ?? ""}`,
+    }));
+  }, [customers]);
+
   return (
     <div className="grid gap-3 md:grid-cols-3">
-      <label className="block text-sm font-semibold">
-        顧客
-        <select
-          value={selectedCustomerId}
-          onChange={(event) => onCustomerChange(Number(event.target.value))}
-          className="field mt-1 w-full font-normal"
-        >
-          <option value={0}>選択してください</option>
-          {customers.map((customer) => (
-            <option key={customer.id} value={customer.id}>
-              {customer.customer_code} {customer.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <CustomerSearchField
+        label="顧客"
+        value={selectedCustomerId}
+        options={customerOptions}
+        onChange={onCustomerChange}
+        emptyOption={{ value: 0, label: "選択してください" }}
+      />
       <label className="block text-sm font-semibold">
         店舗
         <select
@@ -288,6 +307,17 @@ function CustomerPanel({
 }) {
   const [form, setForm] = useState(emptyCustomer);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
+  const filteredCustomers = useMemo(() => {
+    const normalizedQuery = normalizeSearchText(query);
+    if (!normalizedQuery) return customers;
+    return customers.filter((customer) => {
+      const text = normalizeSearchText(
+        `${customer.customer_code} ${customer.name} ${customer.email ?? ""} ${customer.line_name ?? ""} ${customer.bank_transfer_name ?? ""} ${customer.note ?? ""}`,
+      );
+      return text.includes(normalizedQuery);
+    });
+  }, [customers, query]);
 
   async function submit() {
     const body = { ...form, closing_day: Number(form.closing_day) };
@@ -306,44 +336,106 @@ function CustomerPanel({
       <div className="surface p-5">
         <h3 className="font-bold">顧客登録・編集</h3>
         <div className="mt-4 space-y-3">
-          <input className="field w-full" placeholder="顧客コード" value={form.customer_code} onChange={(event) => setForm({ ...form, customer_code: event.target.value })} />
-          <input className="field w-full" placeholder="請求先名" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+          <label className="block text-sm font-semibold text-slate-700">
+            顧客コード
+            <input className="field mt-1 w-full font-normal" value={form.customer_code} onChange={(event) => setForm({ ...form, customer_code: event.target.value })} />
+          </label>
+          <label className="block text-sm font-semibold text-slate-700">
+            請求先名
+            <input className="field mt-1 w-full font-normal" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+          </label>
           <div className="grid gap-3 sm:grid-cols-2">
-            <select className="field" value={form.payment_type} onChange={(event) => setForm({ ...form, payment_type: event.target.value })}>
-              <option value="bank_transfer">振込</option>
-              <option value="cash">現金</option>
-            </select>
-            <select className="field" value={form.delivery_method} onChange={(event) => setForm({ ...form, delivery_method: event.target.value })}>
-              <option value="gmail_pdf">Gmail PDF</option>
-              <option value="line">LINE</option>
-              <option value="hand_delivery">手渡し</option>
-              <option value="postal">郵送</option>
-            </select>
+            <label className="block text-sm font-semibold text-slate-700">
+              支払区分
+              <select
+                className="field mt-1 w-full font-normal"
+                value={form.payment_type}
+                onChange={(event) => setForm({ ...form, payment_type: event.target.value, bank_transfer_name: event.target.value === "bank_transfer" ? form.bank_transfer_name : "" })}
+              >
+                <option value="bank_transfer">振込</option>
+                <option value="cash">現金</option>
+              </select>
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">
+              請求書送付方法
+              <select className="field mt-1 w-full font-normal" value={form.delivery_method} onChange={(event) => setForm({ ...form, delivery_method: event.target.value })}>
+                <option value="gmail_pdf">Gmail PDF</option>
+                <option value="line">LINE</option>
+                <option value="hand_delivery">手渡し</option>
+                <option value="postal">郵送</option>
+              </select>
+            </label>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <input className="field" placeholder="敬称" value={form.honorific} onChange={(event) => setForm({ ...form, honorific: event.target.value })} />
-            <input className="field" type="number" min="1" max="31" placeholder="締日" value={form.closing_day} onChange={(event) => setForm({ ...form, closing_day: Number(event.target.value) })} />
+            <label className="text-sm font-semibold text-slate-700">
+              締め日欄
+              <select
+                className="field mt-1 w-full font-normal"
+                value={form.closing_day}
+                onChange={(event) => setForm({ ...form, closing_day: Number(event.target.value) })}
+              >
+                {closingDayOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">
+              メール
+              <input className="field mt-1 w-full font-normal" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+            </label>
           </div>
-          <input className="field w-full" placeholder="メール" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-          <textarea className="field w-full" placeholder="住所・備考" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} />
+          {form.payment_type === "bank_transfer" ? (
+            <label className="block text-sm font-semibold text-slate-700">
+              振込名義
+              <input className="field mt-1 w-full font-normal" value={form.bank_transfer_name} onChange={(event) => setForm({ ...form, bank_transfer_name: event.target.value })} />
+            </label>
+          ) : null}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block text-sm font-semibold text-slate-700">
+              郵便番号
+              <input className="field mt-1 w-full font-normal" value={form.postal_code} onChange={(event) => setForm({ ...form, postal_code: event.target.value })} />
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">
+              LINE名
+              <input className="field mt-1 w-full font-normal" value={form.line_name} onChange={(event) => setForm({ ...form, line_name: event.target.value })} />
+            </label>
+          </div>
+          <label className="block text-sm font-semibold text-slate-700">
+            住所
+            <input className="field mt-1 w-full font-normal" value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} />
+          </label>
+          <label className="block text-sm font-semibold text-slate-700">
+            備考
+            <textarea className="field mt-1 w-full font-normal" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} />
+          </label>
           <button type="button" className="w-full rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white" onClick={() => runAction(submit, "顧客を保存しました。")}>
             {editingId ? "更新" : "登録"}
           </button>
         </div>
       </div>
       <div className="table-scroll">
-        <table className="min-w-[980px] text-left text-sm">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="顧客コード・請求先名・メール・振込名義で検索"
+            className="field w-full sm:max-w-md"
+          />
+          <p className="text-xs text-slate-500">表示件数: {filteredCustomers.length} / {customers.length}</p>
+        </div>
+        <table className="min-w-[1120px] text-left text-sm">
           <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
-            <tr><th className="px-4 py-3">コード</th><th className="px-4 py-3">請求先</th><th className="px-4 py-3">区分</th><th className="px-4 py-3">送付</th><th className="px-4 py-3">締日</th><th className="px-4 py-3">操作</th></tr>
+            <tr><th className="px-4 py-3">コード</th><th className="px-4 py-3">請求先</th><th className="px-4 py-3">区分</th><th className="px-4 py-3">振込名義</th><th className="px-4 py-3">送付</th><th className="px-4 py-3">締め日欄</th><th className="px-4 py-3">操作</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {customers.map((customer) => (
+            {filteredCustomers.map((customer) => (
               <tr key={customer.id}>
                 <td className="px-4 py-3 font-semibold">{customer.customer_code}</td>
                 <td className="px-4 py-3">{customer.name}</td>
                 <td className="px-4 py-3">{formatPaymentType(customer.payment_type)}</td>
+                <td className="px-4 py-3">{customer.payment_type === "bank_transfer" ? customer.bank_transfer_name ?? "-" : "-"}</td>
                 <td className="px-4 py-3">{formatApiDeliveryMethod(customer.delivery_method)}</td>
-                <td className="px-4 py-3">{customer.closing_day}日</td>
+                <td className="px-4 py-3">{formatApiClosingDay(Number(customer.closing_day))}</td>
                 <td className="space-x-2 px-4 py-3">
                   <button type="button" className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold" onClick={() => {
                     setEditingId(customer.id);
@@ -358,6 +450,7 @@ function CustomerPanel({
                       address: customer.address ?? "",
                       email: customer.email ?? "",
                       line_name: customer.line_name ?? "",
+                      bank_transfer_name: customer.bank_transfer_name ?? "",
                       note: customer.note ?? "",
                     });
                   }}>編集</button>
@@ -388,6 +481,13 @@ function StorePanel({
 }) {
   const [form, setForm] = useState(emptyStore);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const customerOptions = useMemo<CustomerSearchOption<number>[]>(() => {
+    return customers.map((customer) => ({
+      value: customer.id,
+      label: `${customer.customer_code} ${customer.name}`,
+      keywords: `${customer.name} ${customer.customer_code} ${customer.email ?? ""} ${customer.line_name ?? ""}`,
+    }));
+  }, [customers]);
 
   async function submit() {
     const body = { ...form, customer_id: Number(form.customer_id), display_order: Number(form.display_order) };
@@ -405,12 +505,22 @@ function StorePanel({
     <MasterTablePanel title="店舗登録・編集">
       <div className="surface p-5">
         <div className="grid gap-3 md:grid-cols-4">
-          <select className="field" value={form.customer_id} onChange={(event) => setForm({ ...form, customer_id: Number(event.target.value) })}>
-            <option value={0}>顧客選択</option>
-            {customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.customer_code} {customer.name}</option>)}
-          </select>
-          <input className="field" placeholder="店舗名" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-          <input className="field" type="number" placeholder="表示順" value={form.display_order} onChange={(event) => setForm({ ...form, display_order: Number(event.target.value) })} />
+          <CustomerSearchField
+            label="顧客"
+            value={form.customer_id}
+            options={customerOptions}
+            onChange={(customerId) => setForm({ ...form, customer_id: customerId })}
+            emptyOption={{ value: 0, label: "顧客選択" }}
+            className="text-slate-700"
+          />
+          <label className="block text-sm font-semibold text-slate-700">
+            店舗名
+            <input className="field mt-1 w-full font-normal" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+          </label>
+          <label className="block text-sm font-semibold text-slate-700">
+            表示順
+            <input className="field mt-1 w-full font-normal" type="number" value={form.display_order} onChange={(event) => setForm({ ...form, display_order: Number(event.target.value) })} />
+          </label>
           <button type="button" className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white" onClick={() => runAction(submit, "店舗を保存しました。")}>{editingId ? "更新" : "登録"}</button>
         </div>
       </div>
@@ -452,6 +562,13 @@ function PricePanel({
   const [form, setForm] = useState(emptyPrice);
   const [editingId, setEditingId] = useState<number | null>(null);
   const candidateStores = stores.filter((store) => store.customer_id === Number(form.customer_id));
+  const customerOptions = useMemo<CustomerSearchOption<number>[]>(() => {
+    return customers.map((customer) => ({
+      value: customer.id,
+      label: `${customer.customer_code} ${customer.name}`,
+      keywords: `${customer.name} ${customer.customer_code} ${customer.email ?? ""} ${customer.line_name ?? ""}`,
+    }));
+  }, [customers]);
 
   async function submit() {
     const body = {
@@ -475,22 +592,47 @@ function PricePanel({
     <MasterTablePanel title="顧客別単価登録・編集">
       <div className="surface p-5">
         <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-7">
-          <select className="field" value={form.customer_id} onChange={(event) => setForm({ ...form, customer_id: Number(event.target.value), store_id: "" })}>
-            <option value={0}>顧客選択</option>
-            {customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.customer_code} {customer.name}</option>)}
-          </select>
-          <select className="field" value={form.store_id} onChange={(event) => setForm({ ...form, store_id: event.target.value })}>
-            <option value="">全店舗共通</option>
-            {candidateStores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
-          </select>
-          <input className="field" placeholder="商品名" value={form.item_name} onChange={(event) => setForm({ ...form, item_name: event.target.value })} />
-          <input className="field" type="number" placeholder="単価" value={form.unit_price} onChange={(event) => setForm({ ...form, unit_price: Number(event.target.value) })} />
-          <select className="field" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value as PriceCategory })}>
-            <option value="product">商品</option>
-            <option value="delivery_fee">配達料</option>
-            <option value="other_fee">その他手数料</option>
-          </select>
-          <input className="field" type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} />
+          <CustomerSearchField
+            label="顧客"
+            value={form.customer_id}
+            options={customerOptions}
+            onChange={(customerId) => setForm({ ...form, customer_id: customerId, store_id: "" })}
+            emptyOption={{ value: 0, label: "顧客選択" }}
+            className="text-slate-700"
+          />
+          <label className="block text-sm font-semibold text-slate-700">
+            店舗
+            <select className="field mt-1 w-full font-normal" value={form.store_id} onChange={(event) => setForm({ ...form, store_id: event.target.value })}>
+              <option value="">全店舗共通</option>
+              {candidateStores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm font-semibold text-slate-700">
+            商品名
+            <input className="field mt-1 w-full font-normal" value={form.item_name} onChange={(event) => setForm({ ...form, item_name: event.target.value })} />
+          </label>
+          <label className="block text-sm font-semibold text-slate-700">
+            単価
+            <input
+              className="field mt-1 w-full font-normal"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={form.unit_price}
+              onChange={(event) => setForm({ ...form, unit_price: Number(normalizeIntegerInput(event.target.value)) })}
+            />
+          </label>
+          <label className="block text-sm font-semibold text-slate-700">
+            区分
+            <select className="field mt-1 w-full font-normal" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value as PriceCategory })}>
+              <option value="product">商品</option>
+              <option value="delivery_fee">配達料</option>
+              <option value="other_fee">その他手数料</option>
+            </select>
+          </label>
+          <label className="block text-sm font-semibold text-slate-700">
+            開始日
+            <input className="field mt-1 w-full font-normal" type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} />
+          </label>
           <button type="button" className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white" onClick={() => runAction(submit, "単価を保存しました。")}>{editingId ? "更新" : "登録"}</button>
         </div>
       </div>
@@ -537,32 +679,38 @@ function DeliveryEntryPanel({
   const visiblePrices = useMemo(() => {
     return prices.filter((price) => price.customer_id === selectedCustomerId && (price.store_id === selectedStoreId || price.store_id === null));
   }, [prices, selectedCustomerId, selectedStoreId]);
-  const productPrices = visiblePrices.filter((price) => price.category === "product");
-  const deliveryFee = visiblePrices.find((price) => price.category === "delivery_fee");
-  const [dates, setDates] = useState(["", "", "", "", ""]);
+  const productPrices = useMemo(() => visiblePrices.filter((price) => price.category === "product"), [visiblePrices]);
+  const deliveryFee = useMemo(() => visiblePrices.find((price) => price.category === "delivery_fee"), [visiblePrices]);
+  const [deliveryDays, setDeliveryDays] = useState(createEmptyDeliveryEntries);
   const [quantities, setQuantities] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    setDeliveryDays(createEmptyDeliveryEntries());
+    setQuantities({});
+  }, [billingMonth, selectedCustomerId, selectedStoreId]);
 
   useEffect(() => {
     setQuantities((current) => {
       const next = { ...current };
       productPrices.forEach((price) => {
-        if (!next[String(price.id)]) next[String(price.id)] = ["", "", "", "", ""];
+        next[String(price.id)] = ensureDeliveryEntryCount(next[String(price.id)]);
       });
       return next;
     });
   }, [productPrices]);
 
   async function submit() {
+    const deliveryDates = deliveryDays.map((day) => formatDeliveryDateFromDay(billingMonth, day));
     await apiPost("/deliveries.php", {
       customer_id: selectedCustomerId,
       store_id: selectedStoreId,
       billing_month: billingMonth,
-      delivery_dates: dates,
+      delivery_dates: deliveryDates,
       items: productPrices.map((price) => ({
         item_name: price.item_name,
         unit_price: Number(price.unit_price),
         category: price.category,
-        quantities: quantities[String(price.id)] ?? [],
+        quantities: ensureDeliveryEntryCount(quantities[String(price.id)]),
       })),
       delivery_fee: deliveryFee
         ? { item_name: deliveryFee.item_name, unit_price: Number(deliveryFee.unit_price) }
@@ -574,15 +722,15 @@ function DeliveryEntryPanel({
   return (
     <div className="space-y-4">
       <div className="surface p-4 text-sm text-slate-600">
-        納品日は空欄を集計対象外にし、数量が空欄の商品は保存しません。保存時に `delivery_headers` と `delivery_items` へ縦型で登録します。
+        納品日は請求月内の日だけを数字で入力します。空欄は集計対象外、数量が空欄の商品は保存しません。
       </div>
       <div className="table-scroll">
-        <table className="min-w-[1120px] text-left text-sm">
+        <table className="min-w-[2140px] text-left text-sm">
           <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
             <tr>
               <th className="px-4 py-3">商品名</th>
               <th className="px-4 py-3 text-right">単価</th>
-              {dates.map((_, index) => <th key={index} className="px-3 py-3 text-center">{index + 1}回目</th>)}
+              {deliveryDays.map((_, index) => <th key={index} className="px-3 py-3 text-center">{index + 1}回目</th>)}
               <th className="px-4 py-3 text-right">合計</th>
               <th className="px-4 py-3 text-right">金額</th>
             </tr>
@@ -591,15 +739,22 @@ function DeliveryEntryPanel({
             <tr className="bg-slate-50/60">
               <td className="px-4 py-3 font-semibold">納品日</td>
               <td className="px-4 py-3"></td>
-              {dates.map((date, index) => (
+              {deliveryDays.map((day, index) => (
                 <td key={index} className="px-2 py-2">
-                  <input type="date" className="field w-36" value={date} onChange={(event) => setDates(dates.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} />
+                  <input
+                    className="field w-20 text-right"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="日"
+                    value={day}
+                    onChange={(event) => setDeliveryDays(deliveryDays.map((item, itemIndex) => itemIndex === index ? normalizeDayInput(event.target.value, billingMonth) : item))}
+                  />
                 </td>
               ))}
               <td></td><td></td>
             </tr>
             {productPrices.map((price) => {
-              const row = quantities[String(price.id)] ?? ["", "", "", "", ""];
+              const row = ensureDeliveryEntryCount(quantities[String(price.id)]);
               const totalQuantity = row.reduce((sum, value) => sum + Number(value || 0), 0);
               const amount = totalQuantity * Number(price.unit_price);
               return (
@@ -608,7 +763,13 @@ function DeliveryEntryPanel({
                   <td className="px-4 py-3 text-right">{formatCurrencyJPY(Number(price.unit_price))}</td>
                   {row.map((value, index) => (
                     <td key={index} className="px-2 py-2">
-                      <input type="number" min="0" className="field w-24 text-right" value={value} onChange={(event) => setQuantities({ ...quantities, [String(price.id)]: row.map((item, itemIndex) => itemIndex === index ? event.target.value : item) })} />
+                      <input
+                        className="field w-20 text-right"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={value}
+                        onChange={(event) => setQuantities({ ...quantities, [String(price.id)]: row.map((item, itemIndex) => itemIndex === index ? normalizeIntegerInput(event.target.value) : item) })}
+                      />
                     </td>
                   ))}
                   <td className="px-4 py-3 text-right font-semibold">{totalQuantity}</td>
@@ -620,9 +781,9 @@ function DeliveryEntryPanel({
               <tr className="bg-teal-50/40">
                 <td className="px-4 py-3 font-semibold">{deliveryFee.item_name}</td>
                 <td className="px-4 py-3 text-right">{formatCurrencyJPY(Number(deliveryFee.unit_price))}</td>
-                {dates.map((date, index) => <td key={index} className="px-4 py-3 text-center">{date ? 1 : ""}</td>)}
-                <td className="px-4 py-3 text-right font-semibold">{dates.filter(Boolean).length}</td>
-                <td className="px-4 py-3 text-right font-semibold">{formatCurrencyJPY(dates.filter(Boolean).length * Number(deliveryFee.unit_price))}</td>
+                {deliveryDays.map((day, index) => <td key={index} className="px-4 py-3 text-center">{day ? 1 : ""}</td>)}
+                <td className="px-4 py-3 text-right font-semibold">{deliveryDays.filter(Boolean).length}</td>
+                <td className="px-4 py-3 text-right font-semibold">{formatCurrencyJPY(deliveryDays.filter(Boolean).length * Number(deliveryFee.unit_price))}</td>
               </tr>
             ) : null}
           </tbody>
@@ -673,7 +834,7 @@ function InvoiceDetailPanel({
         </div>
         <div className="text-sm text-slate-700">
           <p>対象期間: {billingMonth}-01 から月末</p>
-          <p>締日: {customer?.closing_day ?? "-"}日</p>
+          <p>締日: {customer ? formatApiClosingDay(Number(customer.closing_day)) : "-"}</p>
           <p>発行日: {new Date().toISOString().slice(0, 10)}</p>
         </div>
       </div>
@@ -751,6 +912,37 @@ function HorizontalInvoiceTable({ dates, items }: { dates: string[]; items: Hori
       </table>
     </div>
   );
+}
+
+function ensureDeliveryEntryCount(values: string[] = []) {
+  return Array.from({ length: deliveryEntryCount }, (_, index) => values[index] ?? "");
+}
+
+function normalizeIntegerInput(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+function normalizeSearchText(value: string) {
+  return value.toLowerCase().replace(/\s+/g, "");
+}
+
+function normalizeDayInput(value: string, billingMonth: string) {
+  const numericValue = normalizeIntegerInput(value);
+  if (!numericValue) return "";
+  const day = Number(numericValue);
+  if (day < 1) return "";
+  return String(Math.min(day, getDaysInBillingMonth(billingMonth)));
+}
+
+function getDaysInBillingMonth(billingMonth: string) {
+  const [year, month] = billingMonth.split("-").map(Number);
+  if (!year || !month) return 31;
+  return new Date(year, month, 0).getDate();
+}
+
+function formatDeliveryDateFromDay(billingMonth: string, day: string) {
+  if (!day) return "";
+  return `${billingMonth}-${day.padStart(2, "0")}`;
 }
 
 function SummaryPanel({

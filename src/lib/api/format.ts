@@ -22,3 +22,7 @@ export function formatPriceCategory(value: PriceCategory) {
   };
   return labels[value];
 }
+
+export function formatApiClosingDay(value: number) {
+  return value === 31 ? "月末" : `${value}日`;
+}

@@ -1,0 +1,12 @@
+[
+  {
+    "name": "JV Invoice Deploy",
+    "keyword": ";;jvdeploy",
+    "text": "cd /Users/akoba/projects/jv_invoice && ./deploy_xserver.sh"
+  },
+  {
+    "name": "JV Invoice SSH Key Add",
+    "keyword": ";;jvkey",
+    "text": "ssh-add ~/.ssh/jv_invoice.key"
+  }
+]

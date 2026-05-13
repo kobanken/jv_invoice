@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { BankCustomer, Invoice, PaymentRecord } from "@/types";
+import { useLiveCustomers } from "@/lib/api/customers";
 import { matchPaymentCandidates } from "@/lib/payment";
 import { formatCurrencyJPY, formatPaymentStatus } from "@/lib/format";
 
@@ -12,13 +13,14 @@ export function PaymentMatchingPanel({
   customers: BankCustomer[];
   invoices: Invoice[];
 }) {
-  const [paymentDate, setPaymentDate] = useState("2026-06-03");
-  const [transferName, setTransferName] = useState("カ）アオヤマサロン");
-  const [amount, setAmount] = useState(10800);
+  const { customers: liveCustomers } = useLiveCustomers("bank", customers);
+  const [paymentDate, setPaymentDate] = useState("");
+  const [transferName, setTransferName] = useState("");
+  const [amount, setAmount] = useState(0);
 
   const candidates = useMemo(() => {
     const paymentRecord: PaymentRecord = {
-      paymentId: "PAY-MOCK",
+      paymentId: "PAY-CANDIDATE",
       paymentCheckDate: new Date().toISOString().slice(0, 10),
       paymentDate,
       transferName,
@@ -26,8 +28,9 @@ export function PaymentMatchingPanel({
       matchStatus: "candidate",
       notes: "画面上の候補判定",
     };
-    return matchPaymentCandidates(paymentRecord, invoices, customers);
-  }, [amount, customers, invoices, paymentDate, transferName]);
+    const bankCustomers = liveCustomers.filter((customer): customer is BankCustomer => customer.customerType === "bank");
+    return matchPaymentCandidates(paymentRecord, invoices, bankCustomers);
+  }, [amount, invoices, liveCustomers, paymentDate, transferName]);
 
   return (
     <section className="grid gap-6 xl:grid-cols-[420px_1fr]">

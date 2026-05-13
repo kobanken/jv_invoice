@@ -8,8 +8,8 @@ export default function CashSalesPage() {
   return (
     <AppShell>
       <PageHeader
-        title="現金売上入力"
-        description="現金顧客だけを対象に、振込側とは別データを参照して明細を作成します。"
+        title="現金個別売上調整"
+        description="通常の横型納品入力とは別に、現金顧客の個別明細や調整明細を追加します。"
       />
       <SalesEntryForm
         customerType="cash"

@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { CustomerSearchField, type CustomerSearchOption } from "@/components/CustomerSearchField";
 import type { ClosingDay, Customer, SalesDetail } from "@/types";
+import { useLiveCustomers } from "@/lib/api/customers";
 import { calculateInvoiceTotal, getInvoiceDetails } from "@/lib/invoices";
 import { formatClosingDay, formatCurrencyJPY } from "@/lib/format";
 
@@ -12,11 +14,31 @@ export function InvoicePreview({
   customers: Customer[];
   salesDetails: SalesDetail[];
 }) {
-  const [customerId, setCustomerId] = useState("B001");
+  const { customers: liveCustomers, loading: customersLoading, error: customersError } = useLiveCustomers(undefined, customers);
+  const [customerId, setCustomerId] = useState("");
   const [targetMonth, setTargetMonth] = useState("2026-05");
   const [closingDay, setClosingDay] = useState<string>("endOfMonth");
 
-  const selectedCustomer = customers.find((customer) => customer.customerId === customerId);
+  useEffect(() => {
+    const firstCustomer = liveCustomers[0];
+    if (!firstCustomer) {
+      setCustomerId("");
+      return;
+    }
+    if (!customerId || !liveCustomers.some((customer) => customer.customerId === customerId)) {
+      setCustomerId(firstCustomer.customerId);
+      setClosingDay(String(firstCustomer.closingDay));
+    }
+  }, [customerId, liveCustomers]);
+
+  const selectedCustomer = liveCustomers.find((customer) => customer.customerId === customerId);
+  const customerOptions = useMemo<CustomerSearchOption<string>[]>(() => {
+    return liveCustomers.map((customer) => ({
+      value: customer.customerId,
+      label: `${customer.customerId} ${customer.storeName}`,
+      keywords: `${customer.billingName} ${customer.storeName} ${customer.email} ${customer.notes}`,
+    }));
+  }, [liveCustomers]);
   const details = useMemo(() => {
     return getInvoiceDetails(salesDetails, customerId, targetMonth, parseClosingDay(closingDay));
   }, [closingDay, customerId, salesDetails, targetMonth]);
@@ -24,7 +46,7 @@ export function InvoicePreview({
 
   function handleCustomerChange(nextCustomerId: string) {
     setCustomerId(nextCustomerId);
-    const customer = customers.find((item) => item.customerId === nextCustomerId);
+    const customer = liveCustomers.find((item) => item.customerId === nextCustomerId);
     if (customer) setClosingDay(String(customer.closingDay));
   }
 
@@ -33,20 +55,14 @@ export function InvoicePreview({
       <div className="surface no-print p-5">
         <h3 className="text-base font-bold">表示条件</h3>
         <div className="mt-4 space-y-4">
-          <label className="block text-sm font-semibold">
-            顧客
-            <select
-              value={customerId}
-              onChange={(event) => handleCustomerChange(event.target.value)}
-              className="field mt-1 w-full font-normal"
-            >
-              {customers.map((customer) => (
-                <option key={customer.customerId} value={customer.customerId}>
-                  {customer.customerId} {customer.storeName}
-                </option>
-              ))}
-            </select>
-          </label>
+          <CustomerSearchField
+            label="顧客"
+            value={customerId}
+            options={customerOptions}
+            onChange={handleCustomerChange}
+          />
+          {customersLoading ? <p className="text-xs text-slate-500">顧客マスタを読み込み中です。</p> : null}
+          {customersError ? <p className="text-xs text-amber-700">顧客マスタを取得できないため、既存データで表示しています。</p> : null}
           <label className="block text-sm font-semibold">
             対象月
             <input

@@ -14,7 +14,7 @@ const navGroups = [
     permission: "bank",
     items: [
       { label: "顧客管理", href: "/bank/customers", permission: "bank" },
-      { label: "売上入力", href: "/bank/sales", permission: "bank" },
+      { label: "個別売上調整", href: "/bank/sales", permission: "bank" },
       { label: "請求一覧", href: "/bank/invoices", permission: "bank" },
       { label: "入金確認", href: "/bank/payments", permission: "bank" },
     ],
@@ -24,7 +24,7 @@ const navGroups = [
     permission: "cash",
     items: [
       { label: "顧客管理", href: "/cash/customers", permission: "cash" },
-      { label: "売上入力", href: "/cash/sales", permission: "cash" },
+      { label: "個別売上調整", href: "/cash/sales", permission: "cash" },
       { label: "請求一覧", href: "/cash/invoices", permission: "cash" },
       { label: "集金確認", href: "/cash/collections", permission: "cash" },
     ],

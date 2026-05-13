@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 function list_customers(): void
 {
+    ensure_customer_optional_columns();
     $paymentType = $_GET['payment_type'] ?? null;
     $sql = 'SELECT * FROM customers';
     $params = [];
@@ -21,14 +22,15 @@ function list_customers(): void
 
 function save_customer(?int $id = null, ?array $data = null): void
 {
+    ensure_customer_optional_columns();
     $data ??= json_body();
     $payload = validate_customer_payload($data);
 
     if ($id === null) {
         $sql = 'INSERT INTO customers
-            (customer_code, name, honorific, payment_type, delivery_method, closing_day, postal_code, address, email, line_name, note)
+            (customer_code, name, honorific, payment_type, delivery_method, closing_day, postal_code, address, email, line_name, bank_transfer_name, note)
             VALUES
-            (:customer_code, :name, :honorific, :payment_type, :delivery_method, :closing_day, :postal_code, :address, :email, :line_name, :note)';
+            (:customer_code, :name, :honorific, :payment_type, :delivery_method, :closing_day, :postal_code, :address, :email, :line_name, :bank_transfer_name, :note)';
     } else {
         $payload['id'] = $id;
         $sql = 'UPDATE customers SET
@@ -42,6 +44,7 @@ function save_customer(?int $id = null, ?array $data = null): void
             address = :address,
             email = :email,
             line_name = :line_name,
+            bank_transfer_name = :bank_transfer_name,
             note = :note,
             updated_at = CURRENT_TIMESTAMP
             WHERE id = :id';
@@ -74,8 +77,8 @@ function fetch_customer(int $id): array
 function validate_customer_payload(array $data): array
 {
     $closingDay = require_int_value($data, 'closing_day', 1);
-    if ($closingDay > 31) {
-        json_error('closing_day は1から31の範囲で指定してください。', 422);
+    if (!in_array($closingDay, [15, 20, 31], true)) {
+        json_error('closing_day は15、20、31（月末）のいずれかで指定してください。', 422);
     }
 
     return [
@@ -89,6 +92,21 @@ function validate_customer_payload(array $data): array
         'address' => optional_string($data, 'address', 500),
         'email' => optional_string($data, 'email', 255),
         'line_name' => optional_string($data, 'line_name', 255),
+        'bank_transfer_name' => optional_string($data, 'bank_transfer_name', 255),
         'note' => optional_string($data, 'note', 1000),
     ];
+}
+
+function ensure_customer_optional_columns(): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+
+    $stmt = db()->query("SHOW COLUMNS FROM customers LIKE 'bank_transfer_name'");
+    if (!$stmt->fetch()) {
+        db()->exec('ALTER TABLE customers ADD COLUMN bank_transfer_name VARCHAR(255) NULL AFTER line_name');
+    }
+    $checked = true;
 }

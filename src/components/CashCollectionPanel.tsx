@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { CashCollectionRecord, CashCustomer, Invoice } from "@/types";
+import { useLiveCustomers } from "@/lib/api/customers";
 import { calculateCashCollectionDifference, resolveCashCollectionStatus } from "@/lib/cashCollections";
 import { formatCurrencyJPY } from "@/lib/format";
 
@@ -14,6 +15,7 @@ export function CashCollectionPanel({
   invoices: Invoice[];
   records: CashCollectionRecord[];
 }) {
+  const { customers: liveCustomers } = useLiveCustomers("cash", customers);
   const [collectionAmounts, setCollectionAmounts] = useState<Record<string, number>>(() => {
     return Object.fromEntries(records.map((record) => [record.collectionId, record.collectedAmount]));
   });
@@ -23,11 +25,11 @@ export function CashCollectionPanel({
       const collectedAmount = collectionAmounts[record.collectionId] ?? 0;
       const difference = calculateCashCollectionDifference(record.invoiceAmount, collectedAmount);
       const status = resolveCashCollectionStatus(record.invoiceAmount, collectedAmount);
-      const customer = customers.find((item) => item.customerId === record.customerId);
+      const customer = liveCustomers.find((item) => item.customerId === record.customerId);
       const invoice = invoices.find((item) => item.invoiceId === record.invoiceId);
       return { ...record, collectedAmount, difference, status, customer, invoice };
     });
-  }, [collectionAmounts, customers, invoices, records]);
+  }, [collectionAmounts, invoices, liveCustomers, records]);
 
   return (
     <div className="table-scroll">

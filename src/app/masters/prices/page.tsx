@@ -10,7 +10,7 @@ export default function PriceMasterPage() {
     <AppShell>
       <PageHeader
         title="単価マスタ"
-        description="顧客ごと・商品ごとの単価と適用月を管理します。売上入力時の単価自動反映に使います。"
+        description="顧客ごと・商品ごとの単価と適用月を管理します。納品入力や個別売上調整時の単価自動反映に使います。"
       />
       <PriceMasterTable
         prices={[...bankCustomerPrices, ...cashCustomerPrices]}

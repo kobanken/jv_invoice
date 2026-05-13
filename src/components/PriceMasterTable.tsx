@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Customer, CustomerPrice, Product } from "@/types";
+import { useLiveCustomers } from "@/lib/api/customers";
 import { formatCurrencyJPY } from "@/lib/format";
 
 export function PriceMasterTable({
@@ -13,13 +14,14 @@ export function PriceMasterTable({
   customers: Customer[];
   products: Product[];
 }) {
+  const { customers: liveCustomers, loading, error } = useLiveCustomers(undefined, customers);
   const [customerType, setCustomerType] = useState("");
   const [query, setQuery] = useState("");
 
   const rows = useMemo(() => {
     return prices
       .map((price) => {
-        const customer = customers.find((item) => item.customerId === price.customerId);
+        const customer = liveCustomers.find((item) => item.customerId === price.customerId);
         const product = products.find((item) => item.productId === price.productId);
         return { price, customer, product };
       })
@@ -27,7 +29,7 @@ export function PriceMasterTable({
         const text = `${row.price.customerId} ${row.customer?.storeName ?? ""} ${row.product?.productName ?? ""}`.toLowerCase();
         return (!customerType || row.customer?.customerType === customerType) && text.includes(query.toLowerCase());
       });
-  }, [customerType, customers, prices, products, query]);
+  }, [customerType, liveCustomers, prices, products, query]);
 
   return (
     <section className="space-y-4">
@@ -49,6 +51,8 @@ export function PriceMasterTable({
         </select>
         <div className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-600">
           表示件数: {rows.length}
+          {loading ? " / 顧客マスタ読み込み中" : ""}
+          {error ? " / API取得失敗" : ""}
         </div>
       </div>
       <div className="table-scroll">

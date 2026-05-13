@@ -14,6 +14,7 @@ export type ApiCustomer = {
   address: string | null;
   email: string | null;
   line_name: string | null;
+  bank_transfer_name: string | null;
   note: string | null;
   created_at?: string;
   updated_at?: string;
