@@ -51,9 +51,10 @@ export type DeliveryRow = {
   header_id: number;
   customer_id: number;
   store_id: number;
+  store_name: string | null;
   billing_month: string;
   delivery_date: string;
-  item_id: number;
+  item_id: number | null;
   item_name: string;
   quantity: number;
   unit_price: number;

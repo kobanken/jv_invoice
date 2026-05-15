@@ -20,11 +20,13 @@ function list_deliveries(): void
 
     $sql = 'SELECT
             h.id AS header_id, h.customer_id, h.store_id, h.billing_month, h.delivery_date, h.note AS header_note,
+            s.name AS store_name,
             i.id AS item_id, i.item_name, i.quantity, i.unit_price, i.amount, i.category, i.note AS item_note
         FROM delivery_headers h
+        INNER JOIN stores s ON s.id = h.store_id
         LEFT JOIN delivery_items i ON i.delivery_header_id = h.id
         WHERE ' . implode(' AND ', $where) . '
-        ORDER BY h.delivery_date ASC, i.category ASC, i.item_name ASC, i.id ASC';
+        ORDER BY s.display_order ASC, s.id ASC, h.delivery_date ASC, i.category ASC, i.item_name ASC, i.id ASC';
 
     $stmt = db()->prepare($sql);
     $stmt->execute($params);

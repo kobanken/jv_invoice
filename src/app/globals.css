@@ -73,11 +73,37 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 
 @media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
   body {
     background: white;
   }
 
   .no-print {
     display: none !important;
+  }
+
+  .invoice-paper {
+    color: #020617;
+  }
+
+  .invoice-store-grid {
+    align-items: start;
+  }
+
+  .invoice-store-block {
+    page-break-inside: avoid;
+  }
+
+  .invoice-compact-table {
+    table-layout: auto;
+  }
+
+  .invoice-compact-table th,
+  .invoice-compact-table td {
+    line-height: 1.2;
   }
 }
