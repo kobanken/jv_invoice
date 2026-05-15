@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { AppShell } from "@/components/AppShell";
 import { InvoicePreview } from "@/components/InvoicePreview";
 import { PageHeader } from "@/components/PageHeader";
@@ -11,10 +12,12 @@ export default function InvoicePreviewPage() {
         title="請求書プレビュー"
         description="請求書テンプレートは1つに固定し、顧客ID・対象月・締め日で明細を切り替えます。"
       />
-      <InvoicePreview
-        customers={[...bankCustomers, ...cashCustomers]}
-        salesDetails={[...bankSalesDetails, ...cashSalesDetails]}
-      />
+      <Suspense fallback={<div className="surface p-5 text-sm text-slate-600">請求書プレビューを読み込み中です。</div>}>
+        <InvoicePreview
+          customers={[...bankCustomers, ...cashCustomers]}
+          salesDetails={[...bankSalesDetails, ...cashSalesDetails]}
+        />
+      </Suspense>
     </AppShell>
   );
 }

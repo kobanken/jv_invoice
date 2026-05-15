@@ -10,6 +10,7 @@ export type CollectionStatus = "not_collected" | "collected" | "partial" | "over
 export type UserRole = "admin" | "bank_staff" | "cash_staff" | "viewer";
 
 export type BaseCustomer = {
+  sourceApiCustomerId?: number;
   customerId: string;
   customerType: CustomerType;
   storeName: string;
@@ -78,8 +79,12 @@ export type SalesDetail = {
 
 export type Invoice = {
   invoiceId: string;
+  sourceSummaryId?: number;
+  apiCustomerId?: number;
+  apiStoreId?: number | null;
   customerId: string;
   customerType: CustomerType;
+  billingName?: string;
   storeName: string;
   targetMonth: string;
   closingDay: ClosingDay;
@@ -89,8 +94,11 @@ export type Invoice = {
   deliveryStatus: DeliveryStatus;
   paymentStatus: PaymentStatus;
   issueDate?: string;
+  deliveryDate?: string;
+  paymentDate?: string;
   dueDate: string;
   pdfUrl?: string;
+  statusNote?: string;
   notes: string;
 };
 

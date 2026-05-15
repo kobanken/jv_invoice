@@ -3,38 +3,133 @@ declare(strict_types=1);
 
 function get_invoice_summary(): void
 {
-    $customerId = int_param($_GET, 'customer_id', true);
+    ensure_invoice_summary_store_column();
+    $customerId = int_param($_GET, 'customer_id', false);
+    $storeId = int_param($_GET, 'store_id', false);
+    if ($customerId === null) {
+        list_invoice_summaries();
+        return;
+    }
     $billingMonth = require_month($_GET, 'billing_month');
-    $summary = calculate_invoice_summary($customerId, $billingMonth);
+    $summary = calculate_invoice_summary($customerId, $billingMonth, $storeId);
     json_success($summary);
 }
 
 function save_invoice_summary(): void
 {
+    ensure_invoice_summary_store_column();
+    ensure_invoice_summary_status_columns();
     $data = json_body();
     $customerId = require_int_value($data, 'customer_id', 1);
+    $storeId = isset($data['store_id']) && $data['store_id'] !== '' && $data['store_id'] !== null
+        ? require_int_value($data, 'store_id', 1)
+        : null;
     $billingMonth = require_month($data, 'billing_month');
-    $summary = calculate_invoice_summary($customerId, $billingMonth);
+    $summary = calculate_invoice_summary($customerId, $billingMonth, $storeId);
+    $summary['store_id'] = $storeId;
 
-    $stmt = db()->prepare('INSERT INTO invoice_summaries
-        (customer_id, billing_month, payment_type, delivery_method, product_total, delivery_fee_total, other_fee_total, subtotal, tax, total)
-        VALUES
-        (:customer_id, :billing_month, :payment_type, :delivery_method, :product_total, :delivery_fee_total, :other_fee_total, :subtotal, :tax, :total)
-        ON DUPLICATE KEY UPDATE
-            payment_type = VALUES(payment_type),
-            delivery_method = VALUES(delivery_method),
-            product_total = VALUES(product_total),
-            delivery_fee_total = VALUES(delivery_fee_total),
-            other_fee_total = VALUES(other_fee_total),
-            subtotal = VALUES(subtotal),
-            tax = VALUES(tax),
-            total = VALUES(total),
-            updated_at = CURRENT_TIMESTAMP');
-    $stmt->execute($summary);
-    json_success(calculate_invoice_summary($customerId, $billingMonth), 201);
+    $existingStmt = db()->prepare('SELECT id FROM invoice_summaries
+        WHERE customer_id = :customer_id
+          AND billing_month = :billing_month
+          AND ((store_id IS NULL AND :store_id_null IS NULL) OR store_id = :store_id_value)
+        LIMIT 1');
+    $existingStmt->execute([
+        'customer_id' => $customerId,
+        'billing_month' => $billingMonth,
+        'store_id_null' => $storeId,
+        'store_id_value' => $storeId,
+    ]);
+    $existing = $existingStmt->fetch();
+
+    if ($existing) {
+        $stmt = db()->prepare('UPDATE invoice_summaries SET
+            store_id = :store_id,
+            payment_type = :payment_type,
+            delivery_method = :delivery_method,
+            product_total = :product_total,
+            delivery_fee_total = :delivery_fee_total,
+            other_fee_total = :other_fee_total,
+            subtotal = :subtotal,
+            tax = :tax,
+            total = :total,
+            updated_at = CURRENT_TIMESTAMP
+            WHERE id = :id');
+        $payload = [
+            'id' => (int) $existing['id'],
+            'store_id' => $summary['store_id'],
+            'payment_type' => $summary['payment_type'],
+            'delivery_method' => $summary['delivery_method'],
+            'product_total' => $summary['product_total'],
+            'delivery_fee_total' => $summary['delivery_fee_total'],
+            'other_fee_total' => $summary['other_fee_total'],
+            'subtotal' => $summary['subtotal'],
+            'tax' => $summary['tax'],
+            'total' => $summary['total'],
+        ];
+    } else {
+        $stmt = db()->prepare('INSERT INTO invoice_summaries
+            (customer_id, store_id, billing_month, payment_type, delivery_method, product_total, delivery_fee_total, other_fee_total, subtotal, tax, total)
+            VALUES
+            (:customer_id, :store_id, :billing_month, :payment_type, :delivery_method, :product_total, :delivery_fee_total, :other_fee_total, :subtotal, :tax, :total)');
+        $payload = $summary;
+    }
+    $stmt->execute($payload);
+    json_success(calculate_invoice_summary($customerId, $billingMonth, $storeId), 201);
 }
 
-function calculate_invoice_summary(int $customerId, string $billingMonth): array
+function update_invoice_summary_status(): void
+{
+    ensure_invoice_summary_store_column();
+    ensure_invoice_summary_status_columns();
+    $data = json_body();
+    $id = require_int_value($data, 'id', 1);
+
+    $issueStatus = isset($data['issue_status'])
+        ? require_enum($data, 'issue_status', ['not_issued', 'issued'])
+        : null;
+    $deliveryStatus = isset($data['delivery_status'])
+        ? require_enum($data, 'delivery_status', ['not_delivered', 'delivered'])
+        : null;
+    $paymentStatus = isset($data['payment_status'])
+        ? require_enum($data, 'payment_status', ['unpaid', 'partial', 'paid', 'overpaid'])
+        : null;
+    $statusNote = optional_string($data, 'status_note', 1000);
+
+    $current = get_invoice_summary_by_id($id);
+    if (!$current) {
+        json_error('請求集計が見つかりません。', 404);
+    }
+
+    $today = date('Y-m-d');
+    $nextIssueStatus = $issueStatus ?? $current['issue_status'];
+    $nextDeliveryStatus = $deliveryStatus ?? $current['delivery_status'];
+    $nextPaymentStatus = $paymentStatus ?? $current['payment_status'];
+
+    $stmt = db()->prepare('UPDATE invoice_summaries SET
+        issue_status = :issue_status,
+        delivery_status = :delivery_status,
+        payment_status = :payment_status,
+        issue_date = :issue_date,
+        delivery_date = :delivery_date,
+        payment_date = :payment_date,
+        status_note = :status_note,
+        updated_at = CURRENT_TIMESTAMP
+        WHERE id = :id');
+    $stmt->execute([
+        'id' => $id,
+        'issue_status' => $nextIssueStatus,
+        'delivery_status' => $nextDeliveryStatus,
+        'payment_status' => $nextPaymentStatus,
+        'issue_date' => $nextIssueStatus === 'issued' ? ($current['issue_date'] ?? $today) : null,
+        'delivery_date' => $nextDeliveryStatus === 'delivered' ? ($current['delivery_date'] ?? $today) : null,
+        'payment_date' => in_array($nextPaymentStatus, ['paid', 'overpaid'], true) ? ($current['payment_date'] ?? $today) : null,
+        'status_note' => $statusNote ?? $current['status_note'],
+    ]);
+
+    json_success(get_invoice_summary_by_id($id));
+}
+
+function calculate_invoice_summary(int $customerId, string $billingMonth, ?int $storeId = null): array
 {
     $customerStmt = db()->prepare('SELECT payment_type, delivery_method FROM customers WHERE id = :id');
     $customerStmt->execute(['id' => $customerId]);
@@ -43,12 +138,19 @@ function calculate_invoice_summary(int $customerId, string $billingMonth): array
         json_error('顧客が見つかりません。', 404);
     }
 
+    $where = ['h.customer_id = :customer_id', 'h.billing_month = :billing_month'];
+    $params = ['customer_id' => $customerId, 'billing_month' => $billingMonth];
+    if ($storeId !== null) {
+        $where[] = 'h.store_id = :store_id';
+        $params['store_id'] = $storeId;
+    }
+
     $stmt = db()->prepare('SELECT i.category, SUM(i.amount) AS total_amount
         FROM delivery_headers h
         INNER JOIN delivery_items i ON i.delivery_header_id = h.id
-        WHERE h.customer_id = :customer_id AND h.billing_month = :billing_month
+        WHERE ' . implode(' AND ', $where) . '
         GROUP BY i.category');
-    $stmt->execute(['customer_id' => $customerId, 'billing_month' => $billingMonth]);
+    $stmt->execute($params);
 
     $productTotal = 0;
     $deliveryFeeTotal = 0;
@@ -78,4 +180,121 @@ function calculate_invoice_summary(int $customerId, string $billingMonth): array
         'tax' => $tax,
         'total' => $subtotal + $tax,
     ];
+}
+
+function list_invoice_summaries(): void
+{
+    ensure_invoice_summary_status_columns();
+    $paymentType = $_GET['payment_type'] ?? null;
+    $billingMonth = isset($_GET['billing_month']) && $_GET['billing_month'] !== ''
+        ? require_month($_GET, 'billing_month')
+        : null;
+
+    $where = [];
+    $params = [];
+    if ($paymentType !== null && $paymentType !== '') {
+        if (!in_array($paymentType, ['bank_transfer', 'cash'], true)) {
+            json_error('payment_type の値が正しくありません。', 422);
+        }
+        $where[] = 'i.payment_type = :payment_type';
+        $params['payment_type'] = $paymentType;
+    }
+    if ($billingMonth !== null) {
+        $where[] = 'i.billing_month = :billing_month';
+        $params['billing_month'] = $billingMonth;
+    }
+
+    $sql = 'SELECT
+            i.*,
+            c.customer_code,
+            c.name AS customer_name,
+            c.closing_day,
+            s.name AS store_name
+        FROM invoice_summaries i
+        INNER JOIN customers c ON c.id = i.customer_id
+        LEFT JOIN stores s ON s.id = i.store_id';
+    if ($where) {
+        $sql .= ' WHERE ' . implode(' AND ', $where);
+    }
+    $sql .= ' ORDER BY i.billing_month DESC, c.customer_code ASC, s.display_order ASC, s.id ASC, i.id ASC';
+
+    $stmt = db()->prepare($sql);
+    $stmt->execute($params);
+    json_success($stmt->fetchAll());
+}
+
+function get_invoice_summary_by_id(int $id): ?array
+{
+    $stmt = db()->prepare('SELECT
+            i.*,
+            c.customer_code,
+            c.name AS customer_name,
+            c.closing_day,
+            s.name AS store_name
+        FROM invoice_summaries i
+        INNER JOIN customers c ON c.id = i.customer_id
+        LEFT JOIN stores s ON s.id = i.store_id
+        WHERE i.id = :id
+        LIMIT 1');
+    $stmt->execute(['id' => $id]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+function ensure_invoice_summary_store_column(): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+
+    $stmt = db()->query("SHOW COLUMNS FROM invoice_summaries LIKE 'store_id'");
+    if (!$stmt->fetch()) {
+        db()->exec('ALTER TABLE invoice_summaries ADD COLUMN store_id INT UNSIGNED NULL AFTER customer_id');
+        db()->exec('ALTER TABLE invoice_summaries ADD INDEX idx_invoice_summaries_store_id (store_id)');
+        db()->exec('ALTER TABLE invoice_summaries ADD CONSTRAINT fk_invoice_summaries_store_id FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL');
+    }
+
+    $indexStmt = db()->query("SHOW INDEX FROM invoice_summaries WHERE Key_name = 'uq_invoice_summaries_customer_month'");
+    if ($indexStmt->fetch()) {
+        db()->exec('ALTER TABLE invoice_summaries DROP INDEX uq_invoice_summaries_customer_month');
+    }
+
+    $storeMonthIndexStmt = db()->query("SHOW INDEX FROM invoice_summaries WHERE Key_name = 'uq_invoice_summaries_customer_store_month'");
+    if (!$storeMonthIndexStmt->fetch()) {
+        db()->exec('ALTER TABLE invoice_summaries ADD UNIQUE KEY uq_invoice_summaries_customer_store_month (customer_id, store_id, billing_month)');
+    }
+
+    $checked = true;
+}
+
+function ensure_invoice_summary_status_columns(): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+
+    add_invoice_summary_column_if_missing('issue_status', "ALTER TABLE invoice_summaries ADD COLUMN issue_status ENUM('not_issued', 'issued') NOT NULL DEFAULT 'not_issued' AFTER total");
+    add_invoice_summary_column_if_missing('delivery_status', "ALTER TABLE invoice_summaries ADD COLUMN delivery_status ENUM('not_delivered', 'delivered') NOT NULL DEFAULT 'not_delivered' AFTER issue_status");
+    add_invoice_summary_column_if_missing('payment_status', "ALTER TABLE invoice_summaries ADD COLUMN payment_status ENUM('unpaid', 'partial', 'paid', 'overpaid') NOT NULL DEFAULT 'unpaid' AFTER delivery_status");
+    add_invoice_summary_column_if_missing('issue_date', 'ALTER TABLE invoice_summaries ADD COLUMN issue_date DATE NULL AFTER payment_status');
+    add_invoice_summary_column_if_missing('delivery_date', 'ALTER TABLE invoice_summaries ADD COLUMN delivery_date DATE NULL AFTER issue_date');
+    add_invoice_summary_column_if_missing('payment_date', 'ALTER TABLE invoice_summaries ADD COLUMN payment_date DATE NULL AFTER delivery_date');
+    add_invoice_summary_column_if_missing('status_note', 'ALTER TABLE invoice_summaries ADD COLUMN status_note TEXT NULL AFTER payment_date');
+
+    $indexStmt = db()->query("SHOW INDEX FROM invoice_summaries WHERE Key_name = 'idx_invoice_summaries_status'");
+    if (!$indexStmt->fetch()) {
+        db()->exec('ALTER TABLE invoice_summaries ADD INDEX idx_invoice_summaries_status (issue_status, delivery_status, payment_status)');
+    }
+
+    $checked = true;
+}
+
+function add_invoice_summary_column_if_missing(string $columnName, string $sql): void
+{
+    $stmt = db()->query("SHOW COLUMNS FROM invoice_summaries LIKE " . db()->quote($columnName));
+    if (!$stmt->fetch()) {
+        db()->exec($sql);
+    }
 }

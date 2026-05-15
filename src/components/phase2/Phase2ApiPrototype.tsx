@@ -18,6 +18,13 @@ import { formatCurrencyJPY } from "@/lib/format";
 
 type TabKey = "customers" | "stores" | "prices" | "deliveries" | "details" | "summary";
 
+type DeliveryDraft = {
+  deliveryDays: string[];
+  quantities: Record<string, string[]>;
+};
+
+type DeliveryDraftUpdater = DeliveryDraft | ((current: DeliveryDraft) => DeliveryDraft);
+
 const tabs: { key: TabKey; label: string }[] = [
   { key: "customers", label: "顧客マスタ" },
   { key: "stores", label: "店舗マスタ" },
@@ -41,6 +48,13 @@ function createEmptyDeliveryEntries() {
   return Array.from({ length: deliveryEntryCount }, () => "");
 }
 
+function createEmptyDeliveryDraft(): DeliveryDraft {
+  return {
+    deliveryDays: createEmptyDeliveryEntries(),
+    quantities: {},
+  };
+}
+
 const emptyCustomer = {
   customer_code: "",
   name: "",
@@ -59,7 +73,7 @@ const emptyCustomer = {
 const emptyStore = {
   customer_id: 0,
   name: "",
-  display_order: 0,
+  display_order: "",
   note: "",
 };
 
@@ -67,7 +81,7 @@ const emptyPrice = {
   customer_id: 0,
   store_id: "",
   item_name: "",
-  unit_price: 0,
+  unit_price: "",
   category: "product" as PriceCategory,
   start_date: "2026-04-01",
   end_date: "",
@@ -83,13 +97,24 @@ export function Phase2ApiPrototype() {
   const [selectedStoreId, setSelectedStoreId] = useState<number>(0);
   const [billingMonth, setBillingMonth] = useState("2026-04");
   const [deliveryData, setDeliveryData] = useState<DeliveryListResponse | null>(null);
+  const [deliveryDrafts, setDeliveryDrafts] = useState<Record<string, DeliveryDraft>>({});
   const [summary, setSummary] = useState<InvoiceSummary | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId);
   const selectedStore = stores.find((store) => store.id === selectedStoreId);
+  const selectedCustomerStores = useMemo(() => getSortedCustomerStores(stores, selectedCustomerId), [stores, selectedCustomerId]);
   const shouldShowTargetSelector = tabsWithTargetSelector.includes(activeTab);
+
+  const updateDeliveryDraft = useCallback((storeId: number, updater: DeliveryDraftUpdater) => {
+    setDeliveryDrafts((current) => {
+      const deliveryDraftKey = getDeliveryDraftKey(selectedCustomerId, storeId, billingMonth);
+      const currentDraft = current[deliveryDraftKey] ?? createEmptyDeliveryDraft();
+      const nextDraft = typeof updater === "function" ? updater(currentDraft) : updater;
+      return { ...current, [deliveryDraftKey]: nextDraft };
+    });
+  }, [billingMonth, selectedCustomerId]);
 
   const loadBaseData = useCallback(async () => {
     const [nextCustomers, nextStores, nextPrices] = await Promise.all([
@@ -113,6 +138,7 @@ export function Phase2ApiPrototype() {
       }),
       apiGet<InvoiceSummary>("/invoice-summary.php", {
         customer_id: selectedCustomerId,
+        store_id: selectedStoreId || null,
         billing_month: billingMonth,
       }),
     ]);
@@ -136,6 +162,26 @@ export function Phase2ApiPrototype() {
   useEffect(() => {
     loadDerivedData().catch((exception: unknown) => setError(toErrorMessage(exception)));
   }, [loadDerivedData]);
+
+  useEffect(() => {
+    if (!selectedCustomerId || !deliveryData) return;
+
+    const storeIds = selectedStoreId ? [selectedStoreId] : selectedCustomerStores.map((store) => store.id);
+    const restoredDrafts = buildDeliveryDraftsFromRows({
+      rows: deliveryData.rows,
+      prices,
+      customerId: selectedCustomerId,
+      storeIds,
+    });
+
+    setDeliveryDrafts((current) => {
+      const next = { ...current };
+      storeIds.forEach((storeId) => {
+        next[getDeliveryDraftKey(selectedCustomerId, storeId, billingMonth)] = restoredDrafts[storeId] ?? createEmptyDeliveryDraft();
+      });
+      return next;
+    });
+  }, [billingMonth, deliveryData, prices, selectedCustomerId, selectedCustomerStores, selectedStoreId]);
 
   async function runAction(action: () => Promise<void>, doneMessage: string) {
     setError("");
@@ -203,6 +249,9 @@ export function Phase2ApiPrototype() {
           selectedStoreId={selectedStoreId}
           billingMonth={billingMonth}
           prices={prices}
+          stores={selectedCustomerStores}
+          deliveryDrafts={deliveryDrafts}
+          onDraftChange={updateDeliveryDraft}
           onReload={async () => {
             await loadDerivedData();
           }}
@@ -221,6 +270,7 @@ export function Phase2ApiPrototype() {
       {activeTab === "summary" ? (
         <SummaryPanel
           selectedCustomerId={selectedCustomerId}
+          selectedStoreId={selectedStoreId}
           billingMonth={billingMonth}
           summary={summary}
           onReload={loadDerivedData}
@@ -250,7 +300,7 @@ function TargetSelector({
   onStoreChange: (id: number) => void;
   onBillingMonthChange: (month: string) => void;
 }) {
-  const customerStores = stores.filter((store) => store.customer_id === selectedCustomerId);
+  const customerStores = useMemo(() => getSortedCustomerStores(stores, selectedCustomerId), [stores, selectedCustomerId]);
   const customerOptions = useMemo<CustomerSearchOption<number>[]>(() => {
     return customers.map((customer) => ({
       value: customer.id,
@@ -307,6 +357,8 @@ function CustomerPanel({
 }) {
   const [form, setForm] = useState(emptyCustomer);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ApiCustomer | null>(null);
   const [query, setQuery] = useState("");
   const filteredCustomers = useMemo(() => {
     const normalizedQuery = normalizeSearchText(query);
@@ -328,104 +380,190 @@ function CustomerPanel({
     }
     setForm(emptyCustomer);
     setEditingId(null);
+    setIsFormOpen(false);
     await onReload();
   }
 
+  function openCreateForm() {
+    setForm(emptyCustomer);
+    setEditingId(null);
+    setIsFormOpen(true);
+  }
+
+  function openEditForm(customer: ApiCustomer) {
+    setEditingId(customer.id);
+    setForm({
+      customer_code: customer.customer_code,
+      name: customer.name,
+      honorific: customer.honorific,
+      payment_type: customer.payment_type,
+      delivery_method: customer.delivery_method,
+      closing_day: customer.closing_day,
+      postal_code: customer.postal_code ?? "",
+      address: customer.address ?? "",
+      email: customer.email ?? "",
+      line_name: customer.line_name ?? "",
+      bank_transfer_name: customer.bank_transfer_name ?? "",
+      note: customer.note ?? "",
+    });
+    setIsFormOpen(true);
+  }
+
+  function closeForm() {
+    setIsFormOpen(false);
+    setForm(emptyCustomer);
+    setEditingId(null);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    await runAction(async () => {
+      await apiDelete("/customers.php", { id: deleteTarget.id });
+      await onReload();
+    }, "顧客を削除しました。");
+    setDeleteTarget(null);
+  }
+
   return (
-    <div className="grid gap-5 xl:grid-cols-[380px_1fr]">
-      <div className="surface p-5">
-        <h3 className="font-bold">顧客登録・編集</h3>
-        <div className="mt-4 space-y-3">
-          <label className="block text-sm font-semibold text-slate-700">
-            顧客コード
-            <input className="field mt-1 w-full font-normal" value={form.customer_code} onChange={(event) => setForm({ ...form, customer_code: event.target.value })} />
-          </label>
-          <label className="block text-sm font-semibold text-slate-700">
-            請求先名
-            <input className="field mt-1 w-full font-normal" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-          </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block text-sm font-semibold text-slate-700">
-              支払区分
-              <select
-                className="field mt-1 w-full font-normal"
-                value={form.payment_type}
-                onChange={(event) => setForm({ ...form, payment_type: event.target.value, bank_transfer_name: event.target.value === "bank_transfer" ? form.bank_transfer_name : "" })}
-              >
-                <option value="bank_transfer">振込</option>
-                <option value="cash">現金</option>
-              </select>
-            </label>
-            <label className="block text-sm font-semibold text-slate-700">
-              請求書送付方法
-              <select className="field mt-1 w-full font-normal" value={form.delivery_method} onChange={(event) => setForm({ ...form, delivery_method: event.target.value })}>
-                <option value="gmail_pdf">Gmail PDF</option>
-                <option value="line">LINE</option>
-                <option value="hand_delivery">手渡し</option>
-                <option value="postal">郵送</option>
-              </select>
-            </label>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="text-sm font-semibold text-slate-700">
-              締め日欄
-              <select
-                className="field mt-1 w-full font-normal"
-                value={form.closing_day}
-                onChange={(event) => setForm({ ...form, closing_day: Number(event.target.value) })}
-              >
-                {closingDayOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm font-semibold text-slate-700">
-              メール
-              <input className="field mt-1 w-full font-normal" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-            </label>
-          </div>
-          {form.payment_type === "bank_transfer" ? (
-            <label className="block text-sm font-semibold text-slate-700">
-              振込名義
-              <input className="field mt-1 w-full font-normal" value={form.bank_transfer_name} onChange={(event) => setForm({ ...form, bank_transfer_name: event.target.value })} />
-            </label>
-          ) : null}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block text-sm font-semibold text-slate-700">
-              郵便番号
-              <input className="field mt-1 w-full font-normal" value={form.postal_code} onChange={(event) => setForm({ ...form, postal_code: event.target.value })} />
-            </label>
-            <label className="block text-sm font-semibold text-slate-700">
-              LINE名
-              <input className="field mt-1 w-full font-normal" value={form.line_name} onChange={(event) => setForm({ ...form, line_name: event.target.value })} />
-            </label>
-          </div>
-          <label className="block text-sm font-semibold text-slate-700">
-            住所
-            <input className="field mt-1 w-full font-normal" value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} />
-          </label>
-          <label className="block text-sm font-semibold text-slate-700">
-            備考
-            <textarea className="field mt-1 w-full font-normal" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} />
-          </label>
-          <button type="button" className="w-full rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white" onClick={() => runAction(submit, "顧客を保存しました。")}>
-            {editingId ? "更新" : "登録"}
-          </button>
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-base font-bold">顧客マスタ</h3>
+          <p className="mt-1 text-xs text-slate-500">顧客登録・編集はボタンから開きます。</p>
         </div>
+        <button type="button" className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white" onClick={openCreateForm}>
+          顧客を追加
+        </button>
       </div>
+
+      {isFormOpen ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/40 px-4 py-8">
+          <div className="surface w-full max-w-2xl p-5 shadow-xl">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
+              <h3 className="font-bold">{editingId ? "顧客編集" : "顧客登録"}</h3>
+              <button type="button" className="rounded bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700" onClick={closeForm}>
+                閉じる
+              </button>
+            </div>
+            <div className="mt-4 space-y-3">
+              <label className="block text-sm font-semibold text-slate-700">
+                顧客コード
+                <input className="field mt-1 w-full font-normal" value={form.customer_code} onChange={(event) => setForm({ ...form, customer_code: event.target.value })} />
+              </label>
+              <label className="block text-sm font-semibold text-slate-700">
+                請求先名
+                <input className="field mt-1 w-full font-normal" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm font-semibold text-slate-700">
+                  支払区分
+                  <select
+                    className="field mt-1 w-full font-normal"
+                    value={form.payment_type}
+                    onChange={(event) => setForm({ ...form, payment_type: event.target.value, bank_transfer_name: event.target.value === "bank_transfer" ? form.bank_transfer_name : "" })}
+                  >
+                    <option value="bank_transfer">振込</option>
+                    <option value="cash">現金</option>
+                  </select>
+                </label>
+                <label className="block text-sm font-semibold text-slate-700">
+                  請求書送付方法
+                  <select className="field mt-1 w-full font-normal" value={form.delivery_method} onChange={(event) => setForm({ ...form, delivery_method: event.target.value })}>
+                    <option value="gmail_pdf">Gmail PDF</option>
+                    <option value="line">LINE</option>
+                    <option value="hand_delivery">手渡し</option>
+                    <option value="postal">郵送</option>
+                  </select>
+                </label>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-sm font-semibold text-slate-700">
+                  締め日欄
+                  <select
+                    className="field mt-1 w-full font-normal"
+                    value={form.closing_day}
+                    onChange={(event) => setForm({ ...form, closing_day: Number(event.target.value) })}
+                  >
+                    {closingDayOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm font-semibold text-slate-700">
+                  メール
+                  <input className="field mt-1 w-full font-normal" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+                </label>
+              </div>
+              {form.payment_type === "bank_transfer" ? (
+                <label className="block text-sm font-semibold text-slate-700">
+                  振込名義
+                  <input className="field mt-1 w-full font-normal" value={form.bank_transfer_name} onChange={(event) => setForm({ ...form, bank_transfer_name: event.target.value })} />
+                </label>
+              ) : null}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm font-semibold text-slate-700">
+                  郵便番号
+                  <input className="field mt-1 w-full font-normal" value={form.postal_code} onChange={(event) => setForm({ ...form, postal_code: event.target.value })} />
+                </label>
+                <label className="block text-sm font-semibold text-slate-700">
+                  LINE名
+                  <input className="field mt-1 w-full font-normal" value={form.line_name} onChange={(event) => setForm({ ...form, line_name: event.target.value })} />
+                </label>
+              </div>
+              <label className="block text-sm font-semibold text-slate-700">
+                住所
+                <input className="field mt-1 w-full font-normal" value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} />
+              </label>
+              <label className="block text-sm font-semibold text-slate-700">
+                備考
+                <textarea className="field mt-1 w-full font-normal" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} />
+              </label>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" className="rounded-md bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700" onClick={closeForm}>
+                  キャンセル
+                </button>
+                <button type="button" className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white" onClick={() => runAction(submit, "顧客を保存しました。")}>
+                  {editingId ? "更新" : "登録"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-8">
+          <div className="surface w-full max-w-md p-5 shadow-xl">
+            <h3 className="font-bold">顧客を削除しますか？</h3>
+            <div className="mt-3 rounded-md bg-rose-50 px-3 py-3 text-sm text-rose-800">
+              <p className="font-semibold">{deleteTarget.customer_code} {deleteTarget.name}</p>
+              <p className="mt-1 text-xs">この操作は取り消せません。</p>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" className="rounded-md bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700" onClick={() => setDeleteTarget(null)}>
+                キャンセル
+              </button>
+              <button type="button" className="rounded-md bg-rose-700 px-4 py-2 text-sm font-semibold text-white" onClick={confirmDelete}>
+                削除する
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="table-scroll">
-        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-3 flex flex-col gap-2 pl-3 pt-2 sm:flex-row sm:items-center">
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="顧客コード・請求先名・メール・振込名義で検索"
-            className="field w-full sm:max-w-md"
+            className="field w-full sm:max-w-56"
           />
-          <p className="text-xs text-slate-500">表示件数: {filteredCustomers.length} / {customers.length}</p>
+          <p className="pl-3 text-xs text-slate-500">表示件数: {filteredCustomers.length} / {customers.length}</p>
         </div>
-        <table className="min-w-[1120px] text-left text-sm">
+        <table className="min-w-[1360px] text-left text-sm">
           <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
-            <tr><th className="px-4 py-3">コード</th><th className="px-4 py-3">請求先</th><th className="px-4 py-3">区分</th><th className="px-4 py-3">振込名義</th><th className="px-4 py-3">送付</th><th className="px-4 py-3">締め日欄</th><th className="px-4 py-3">操作</th></tr>
+            <tr><th className="px-4 py-3">コード</th><th className="px-4 py-3">請求先</th><th className="px-4 py-3">区分</th><th className="px-4 py-3">振込名義</th><th className="px-4 py-3">送付</th><th className="px-4 py-3">締め日欄</th><th className="px-4 py-3">備考</th><th className="px-4 py-3">操作</th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filteredCustomers.map((customer) => (
@@ -436,28 +574,10 @@ function CustomerPanel({
                 <td className="px-4 py-3">{customer.payment_type === "bank_transfer" ? customer.bank_transfer_name ?? "-" : "-"}</td>
                 <td className="px-4 py-3">{formatApiDeliveryMethod(customer.delivery_method)}</td>
                 <td className="px-4 py-3">{formatApiClosingDay(Number(customer.closing_day))}</td>
+                <td className="max-w-[320px] px-4 py-3 text-slate-600">{customer.note ?? "-"}</td>
                 <td className="space-x-2 px-4 py-3">
-                  <button type="button" className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold" onClick={() => {
-                    setEditingId(customer.id);
-                    setForm({
-                      customer_code: customer.customer_code,
-                      name: customer.name,
-                      honorific: customer.honorific,
-                      payment_type: customer.payment_type,
-                      delivery_method: customer.delivery_method,
-                      closing_day: customer.closing_day,
-                      postal_code: customer.postal_code ?? "",
-                      address: customer.address ?? "",
-                      email: customer.email ?? "",
-                      line_name: customer.line_name ?? "",
-                      bank_transfer_name: customer.bank_transfer_name ?? "",
-                      note: customer.note ?? "",
-                    });
-                  }}>編集</button>
-                  <button type="button" className="rounded bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700" onClick={() => runAction(async () => {
-                    await apiDelete("/customers.php", { id: customer.id });
-                    await onReload();
-                  }, "顧客を削除しました。")}>削除</button>
+                  <button type="button" className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold" onClick={() => openEditForm(customer)}>編集</button>
+                  <button type="button" className="rounded bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700" onClick={() => setDeleteTarget(customer)}>削除</button>
                 </td>
               </tr>
             ))}
@@ -490,7 +610,7 @@ function StorePanel({
   }, [customers]);
 
   async function submit() {
-    const body = { ...form, customer_id: Number(form.customer_id), display_order: Number(form.display_order) };
+    const body = { ...form, customer_id: Number(form.customer_id), display_order: Number(form.display_order || 0) };
     if (editingId) {
       await apiPut<ApiStore>("/stores.php", { id: editingId, ...body });
     } else {
@@ -519,7 +639,13 @@ function StorePanel({
           </label>
           <label className="block text-sm font-semibold text-slate-700">
             表示順
-            <input className="field mt-1 w-full font-normal" type="number" value={form.display_order} onChange={(event) => setForm({ ...form, display_order: Number(event.target.value) })} />
+            <input
+              className="field mt-1 w-full font-normal"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={form.display_order}
+              onChange={(event) => setForm({ ...form, display_order: normalizeIntegerInput(event.target.value) })}
+            />
           </label>
           <button type="button" className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white" onClick={() => runAction(submit, "店舗を保存しました。")}>{editingId ? "更新" : "登録"}</button>
         </div>
@@ -534,7 +660,7 @@ function StorePanel({
                 <td className="px-4 py-3 font-semibold">{store.name}</td>
                 <td className="px-4 py-3">{store.display_order}</td>
                 <td className="space-x-2 px-4 py-3">
-                  <button type="button" className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold" onClick={() => { setEditingId(store.id); setForm({ customer_id: store.customer_id, name: store.name, display_order: store.display_order, note: store.note ?? "" }); }}>編集</button>
+                  <button type="button" className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold" onClick={() => { setEditingId(store.id); setForm({ customer_id: store.customer_id, name: store.name, display_order: String(store.display_order), note: store.note ?? "" }); }}>編集</button>
                   <button type="button" className="rounded bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700" onClick={() => runAction(async () => { await apiDelete("/stores.php", { id: store.id }); await onReload(); }, "店舗を削除しました。")}>削除</button>
                 </td>
               </tr>
@@ -575,7 +701,7 @@ function PricePanel({
       ...form,
       customer_id: Number(form.customer_id),
       store_id: form.store_id === "" ? null : Number(form.store_id),
-      unit_price: Number(form.unit_price),
+      unit_price: Number(form.unit_price || 0),
       end_date: form.end_date || null,
     };
     if (editingId) {
@@ -618,7 +744,7 @@ function PricePanel({
               inputMode="numeric"
               pattern="[0-9]*"
               value={form.unit_price}
-              onChange={(event) => setForm({ ...form, unit_price: Number(normalizeIntegerInput(event.target.value)) })}
+              onChange={(event) => setForm({ ...form, unit_price: normalizeIntegerInput(event.target.value) })}
             />
           </label>
           <label className="block text-sm font-semibold text-slate-700">
@@ -649,7 +775,7 @@ function PricePanel({
                 <td className="px-4 py-3">{formatCurrencyJPY(Number(price.unit_price))}</td>
                 <td className="px-4 py-3">{price.start_date}</td>
                 <td className="space-x-2 px-4 py-3">
-                  <button type="button" className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold" onClick={() => { setEditingId(price.id); setForm({ customer_id: price.customer_id, store_id: price.store_id ? String(price.store_id) : "", item_name: price.item_name, unit_price: Number(price.unit_price), category: price.category, start_date: price.start_date, end_date: price.end_date ?? "", note: price.note ?? "" }); }}>編集</button>
+                  <button type="button" className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold" onClick={() => { setEditingId(price.id); setForm({ customer_id: price.customer_id, store_id: price.store_id ? String(price.store_id) : "", item_name: price.item_name, unit_price: String(price.unit_price), category: price.category, start_date: price.start_date, end_date: price.end_date ?? "", note: price.note ?? "" }); }}>編集</button>
                   <button type="button" className="rounded bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700" onClick={() => runAction(async () => { await apiDelete("/prices.php", { id: price.id }); await onReload(); }, "単価を削除しました。")}>削除</button>
                 </td>
               </tr>
@@ -666,6 +792,9 @@ function DeliveryEntryPanel({
   selectedStoreId,
   billingMonth,
   prices,
+  stores,
+  deliveryDrafts,
+  onDraftChange,
   onReload,
   runAction,
 }: {
@@ -673,56 +802,134 @@ function DeliveryEntryPanel({
   selectedStoreId: number;
   billingMonth: string;
   prices: ApiPrice[];
+  stores: ApiStore[];
+  deliveryDrafts: Record<string, DeliveryDraft>;
+  onDraftChange: (storeId: number, updater: DeliveryDraftUpdater) => void;
   onReload: () => Promise<void>;
   runAction: (action: () => Promise<void>, doneMessage: string) => Promise<void>;
 }) {
-  const visiblePrices = useMemo(() => {
-    return prices.filter((price) => price.customer_id === selectedCustomerId && (price.store_id === selectedStoreId || price.store_id === null));
-  }, [prices, selectedCustomerId, selectedStoreId]);
-  const productPrices = useMemo(() => visiblePrices.filter((price) => price.category === "product"), [visiblePrices]);
-  const deliveryFee = useMemo(() => visiblePrices.find((price) => price.category === "delivery_fee"), [visiblePrices]);
-  const [deliveryDays, setDeliveryDays] = useState(createEmptyDeliveryEntries);
-  const [quantities, setQuantities] = useState<Record<string, string[]>>({});
-
-  useEffect(() => {
-    setDeliveryDays(createEmptyDeliveryEntries());
-    setQuantities({});
-  }, [billingMonth, selectedCustomerId, selectedStoreId]);
-
-  useEffect(() => {
-    setQuantities((current) => {
-      const next = { ...current };
-      productPrices.forEach((price) => {
-        next[String(price.id)] = ensureDeliveryEntryCount(next[String(price.id)]);
-      });
-      return next;
-    });
-  }, [productPrices]);
+  const deliveryStores = useMemo(() => {
+    if (selectedStoreId) return stores.filter((store) => store.id === selectedStoreId);
+    return stores;
+  }, [selectedStoreId, stores]);
 
   async function submit() {
-    const deliveryDates = deliveryDays.map((day) => formatDeliveryDateFromDay(billingMonth, day));
-    await apiPost("/deliveries.php", {
-      customer_id: selectedCustomerId,
-      store_id: selectedStoreId,
-      billing_month: billingMonth,
-      delivery_dates: deliveryDates,
-      items: productPrices.map((price) => ({
-        item_name: price.item_name,
-        unit_price: Number(price.unit_price),
-        category: price.category,
-        quantities: ensureDeliveryEntryCount(quantities[String(price.id)]),
-      })),
-      delivery_fee: deliveryFee
-        ? { item_name: deliveryFee.item_name, unit_price: Number(deliveryFee.unit_price) }
-        : null,
+    const storeInputs = deliveryStores.map((store) => {
+      const draft = deliveryDrafts[getDeliveryDraftKey(selectedCustomerId, store.id, billingMonth)] ?? createEmptyDeliveryDraft();
+      return {
+        store,
+        draft,
+        prices: getVisibleDeliveryPrices(prices, selectedCustomerId, store.id),
+      };
+    });
+
+    const storesToSave = selectedStoreId ? storeInputs : storeInputs.filter(({ draft }) => hasDeliveryDraftInput(draft));
+    if (storesToSave.length === 0) {
+      throw new Error("保存対象の納品入力がありません。");
+    }
+
+    for (const storeInput of storesToSave) {
+      await saveDeliveryStoreInput({
+        customerId: selectedCustomerId,
+        storeId: storeInput.store.id,
+        billingMonth,
+        draft: storeInput.draft,
+        prices: storeInput.prices,
+      });
+    }
+    await onReload();
+  }
+
+  async function submitStore(store: ApiStore) {
+    const draft = deliveryDrafts[getDeliveryDraftKey(selectedCustomerId, store.id, billingMonth)] ?? createEmptyDeliveryDraft();
+    await saveDeliveryStoreInput({
+      customerId: selectedCustomerId,
+      storeId: store.id,
+      billingMonth,
+      draft,
+      prices: getVisibleDeliveryPrices(prices, selectedCustomerId, store.id),
     });
     await onReload();
+  }
+
+  if (!selectedCustomerId) {
+    return <div className="surface p-5 text-sm text-slate-600">顧客を選択してください。</div>;
+  }
+
+  if (deliveryStores.length === 0) {
+    return <div className="surface p-5 text-sm text-slate-600">この顧客の店舗を店舗マスタで登録してください。</div>;
   }
 
   return (
     <div className="space-y-4">
       <div className="surface p-4 text-sm text-slate-600">
         納品日は請求月内の日だけを数字で入力します。空欄は集計対象外、数量が空欄の商品は保存しません。
+      </div>
+      {deliveryStores.map((store) => {
+        const draft = deliveryDrafts[getDeliveryDraftKey(selectedCustomerId, store.id, billingMonth)] ?? createEmptyDeliveryDraft();
+        return (
+          <DeliveryEntryStoreCard
+            key={store.id}
+            store={store}
+            selectedCustomerId={selectedCustomerId}
+            billingMonth={billingMonth}
+            prices={prices}
+            draft={draft}
+            onDraftChange={onDraftChange}
+            onSave={() => runAction(() => submitStore(store), `${store.name}の納品データを保存しました。`)}
+          />
+        );
+      })}
+      {deliveryStores.length > 1 ? (
+        <button type="button" disabled={!selectedCustomerId} className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300" onClick={() => runAction(submit, "全店舗の納品データを保存しました。")}>全店舗分を保存</button>
+      ) : null}
+    </div>
+  );
+}
+
+function DeliveryEntryStoreCard({
+  store,
+  selectedCustomerId,
+  billingMonth,
+  prices,
+  draft,
+  onDraftChange,
+  onSave,
+}: {
+  store: ApiStore;
+  selectedCustomerId: number;
+  billingMonth: string;
+  prices: ApiPrice[];
+  draft: DeliveryDraft;
+  onDraftChange: (storeId: number, updater: DeliveryDraftUpdater) => void;
+  onSave: () => void;
+}) {
+  const visiblePrices = useMemo(() => {
+    return getVisibleDeliveryPrices(prices, selectedCustomerId, store.id);
+  }, [prices, selectedCustomerId, store.id]);
+  const productPrices = useMemo(() => visiblePrices.filter((price) => price.category === "product"), [visiblePrices]);
+  const deliveryFee = useMemo(() => visiblePrices.find((price) => price.category === "delivery_fee"), [visiblePrices]);
+  const deliveryDays = ensureDeliveryEntryCount(draft.deliveryDays);
+  const quantities = draft.quantities;
+
+  useEffect(() => {
+    onDraftChange(store.id, (currentDraft) => {
+      const nextQuantities = { ...currentDraft.quantities };
+      productPrices.forEach((price) => {
+        nextQuantities[String(price.id)] = ensureDeliveryEntryCount(nextQuantities[String(price.id)]);
+      });
+      return {
+        deliveryDays: ensureDeliveryEntryCount(currentDraft.deliveryDays),
+        quantities: nextQuantities,
+      };
+    });
+  }, [onDraftChange, productPrices, store.id]);
+
+  return (
+    <section className="surface overflow-hidden">
+      <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <h3 className="text-base font-bold">{store.name}</h3>
+        <button type="button" className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white" onClick={onSave}>この店舗を保存</button>
       </div>
       <div className="table-scroll">
         <table className="min-w-[2140px] text-left text-sm">
@@ -747,7 +954,10 @@ function DeliveryEntryPanel({
                     pattern="[0-9]*"
                     placeholder="日"
                     value={day}
-                    onChange={(event) => setDeliveryDays(deliveryDays.map((item, itemIndex) => itemIndex === index ? normalizeDayInput(event.target.value, billingMonth) : item))}
+                    onChange={(event) => {
+                      const nextDeliveryDays = deliveryDays.map((item, itemIndex) => itemIndex === index ? normalizeDayInput(event.target.value, billingMonth) : item);
+                      onDraftChange(store.id, (currentDraft) => ({ ...currentDraft, deliveryDays: nextDeliveryDays }));
+                    }}
                   />
                 </td>
               ))}
@@ -768,7 +978,13 @@ function DeliveryEntryPanel({
                         inputMode="numeric"
                         pattern="[0-9]*"
                         value={value}
-                        onChange={(event) => setQuantities({ ...quantities, [String(price.id)]: row.map((item, itemIndex) => itemIndex === index ? normalizeIntegerInput(event.target.value) : item) })}
+                        onChange={(event) => {
+                          const nextRow = row.map((item, itemIndex) => itemIndex === index ? normalizeIntegerInput(event.target.value) : item);
+                          onDraftChange(store.id, (currentDraft) => ({
+                            ...currentDraft,
+                            quantities: { ...currentDraft.quantities, [String(price.id)]: nextRow },
+                          }));
+                        }}
                       />
                     </td>
                   ))}
@@ -789,8 +1005,7 @@ function DeliveryEntryPanel({
           </tbody>
         </table>
       </div>
-      <button type="button" disabled={!selectedCustomerId || !selectedStoreId} className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300" onClick={() => runAction(submit, "納品データを保存しました。")}>横型入力を保存</button>
-    </div>
+    </section>
   );
 }
 
@@ -918,6 +1133,133 @@ function ensureDeliveryEntryCount(values: string[] = []) {
   return Array.from({ length: deliveryEntryCount }, (_, index) => values[index] ?? "");
 }
 
+function getSortedCustomerStores(stores: ApiStore[], customerId: number) {
+  return stores
+    .filter((store) => store.customer_id === customerId)
+    .sort((left, right) => left.display_order - right.display_order || left.id - right.id);
+}
+
+function getVisibleDeliveryPrices(prices: ApiPrice[], customerId: number, storeId: number) {
+  return prices.filter((price) => price.customer_id === customerId && (price.store_id === storeId || price.store_id === null));
+}
+
+function hasDeliveryDraftInput(draft: DeliveryDraft) {
+  const deliveryDays = ensureDeliveryEntryCount(draft.deliveryDays);
+  const hasDeliveryDay = deliveryDays.some(Boolean);
+  const hasQuantity = Object.values(draft.quantities).some((row) => ensureDeliveryEntryCount(row).some(Boolean));
+  return hasDeliveryDay || hasQuantity;
+}
+
+function buildDeliveryDraftsFromRows({
+  rows,
+  prices,
+  customerId,
+  storeIds,
+}: {
+  rows: DeliveryRow[];
+  prices: ApiPrice[];
+  customerId: number;
+  storeIds: number[];
+}) {
+  const drafts: Record<number, DeliveryDraft> = {};
+  const targetStoreIds = new Set(storeIds);
+  storeIds.forEach((storeId) => {
+    drafts[storeId] = createEmptyDeliveryDraft();
+  });
+
+  const datesByStore = new Map<number, string[]>();
+  rows.forEach((row) => {
+    const storeId = Number(row.store_id);
+    if (!targetStoreIds.has(storeId) || !row.delivery_date) return;
+
+    const dates = datesByStore.get(storeId) ?? [];
+    if (!dates.includes(row.delivery_date) && dates.length < deliveryEntryCount) {
+      dates.push(row.delivery_date);
+    }
+    datesByStore.set(storeId, dates);
+  });
+
+  datesByStore.forEach((dates, storeId) => {
+    const draft = drafts[storeId] ?? createEmptyDeliveryDraft();
+    dates.forEach((date, index) => {
+      draft.deliveryDays[index] = String(Number(date.slice(8, 10)));
+    });
+    drafts[storeId] = draft;
+  });
+
+  rows.forEach((row) => {
+    const storeId = Number(row.store_id);
+    if (!targetStoreIds.has(storeId) || row.category !== "product" || !row.delivery_date) return;
+
+    const dateIndex = datesByStore.get(storeId)?.indexOf(row.delivery_date) ?? -1;
+    if (dateIndex < 0 || dateIndex >= deliveryEntryCount) return;
+
+    const price = findMatchingProductPrice(prices, row, customerId, storeId);
+    if (!price) return;
+
+    const draft = drafts[storeId] ?? createEmptyDeliveryDraft();
+    const quantityKey = String(price.id);
+    const quantityRow = ensureDeliveryEntryCount(draft.quantities[quantityKey]);
+    const currentQuantity = Number(quantityRow[dateIndex] || 0);
+    const nextQuantity = currentQuantity + Number(row.quantity || 0);
+    quantityRow[dateIndex] = String(nextQuantity);
+    draft.quantities[quantityKey] = quantityRow;
+    drafts[storeId] = draft;
+  });
+
+  return drafts;
+}
+
+function findMatchingProductPrice(prices: ApiPrice[], row: DeliveryRow, customerId: number, storeId: number) {
+  const candidates = getVisibleDeliveryPrices(prices, customerId, storeId).filter((price) => (
+    price.category === "product" &&
+    price.item_name === row.item_name
+  ));
+  const exactCandidates = candidates.filter((price) => Number(price.unit_price) === Number(row.unit_price));
+  return (
+    exactCandidates.find((price) => price.store_id === storeId) ??
+    exactCandidates.find((price) => price.store_id === null) ??
+    candidates.find((price) => price.store_id === storeId) ??
+    candidates.find((price) => price.store_id === null)
+  );
+}
+
+async function saveDeliveryStoreInput({
+  customerId,
+  storeId,
+  billingMonth,
+  draft,
+  prices,
+}: {
+  customerId: number;
+  storeId: number;
+  billingMonth: string;
+  draft: DeliveryDraft;
+  prices: ApiPrice[];
+}) {
+  const productPrices = prices.filter((price) => price.category === "product");
+  const deliveryFee = prices.find((price) => price.category === "delivery_fee");
+  const deliveryDays = ensureDeliveryEntryCount(draft.deliveryDays);
+  const quantities = draft.quantities;
+  const deliveryDates = deliveryDays.map((day) => formatDeliveryDateFromDay(billingMonth, day));
+
+  await apiPost("/deliveries.php", {
+    customer_id: customerId,
+    store_id: storeId,
+    billing_month: billingMonth,
+    delivery_dates: deliveryDates,
+    items: productPrices.map((price) => ({
+      item_name: price.item_name,
+      unit_price: Number(price.unit_price),
+      category: price.category,
+      quantities: ensureDeliveryEntryCount(quantities[String(price.id)]),
+    })),
+    delivery_fee: deliveryFee
+      ? { item_name: deliveryFee.item_name, unit_price: Number(deliveryFee.unit_price) }
+      : null,
+  });
+}
+
 function normalizeIntegerInput(value: string) {
   return value.replace(/\D/g, "");
 }
@@ -945,21 +1287,31 @@ function formatDeliveryDateFromDay(billingMonth: string, day: string) {
   return `${billingMonth}-${day.padStart(2, "0")}`;
 }
 
+function getDeliveryDraftKey(customerId: number, storeId: number, billingMonth: string) {
+  return `${customerId}:${storeId}:${billingMonth}`;
+}
+
 function SummaryPanel({
   selectedCustomerId,
+  selectedStoreId,
   billingMonth,
   summary,
   onReload,
   runAction,
 }: {
   selectedCustomerId: number;
+  selectedStoreId: number;
   billingMonth: string;
   summary: InvoiceSummary | null;
   onReload: () => Promise<void>;
   runAction: (action: () => Promise<void>, doneMessage: string) => Promise<void>;
 }) {
   async function saveSummary() {
-    await apiPost("/invoice-summary.php", { customer_id: selectedCustomerId, billing_month: billingMonth });
+    await apiPost("/invoice-summary.php", {
+      customer_id: selectedCustomerId,
+      store_id: selectedStoreId || null,
+      billing_month: billingMonth,
+    });
     await onReload();
   }
   return (

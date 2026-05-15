@@ -2,9 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { canAccess, currentUserRole } from "@/config/permissions";
+import { canAccess, currentUserRole, roleLabels, type PermissionKey } from "@/config/permissions";
 
-const navGroups = [
+type NavItem = {
+  label: string;
+  href: string;
+  permission: PermissionKey;
+};
+
+type NavGroup = {
+  title: string;
+  permission?: PermissionKey;
+  items: NavItem[];
+};
+
+const navGroups: NavGroup[] = [
   {
     title: "",
     items: [{ label: "ダッシュボード", href: "/", permission: "dashboard" }],
@@ -58,7 +70,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <p className="text-[11px] font-bold tracking-wide text-teal-700">JV INVOICE</p>
             <h1 className="text-base font-bold">請求管理</h1>
           </div>
-          <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">{currentUserRole}</span>
+          <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">{roleLabels[currentUserRole]}</span>
         </div>
         <nav className="mt-3 flex gap-2 overflow-x-auto pb-1">
           {navGroups.flatMap((group) =>
@@ -84,7 +96,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <p className="text-[11px] font-bold tracking-wide text-teal-700">JV INVOICE</p>
           <h1 className="mt-1 text-xl font-bold">請求管理</h1>
           <p className="mt-3 inline-flex rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
-            role: {currentUserRole}
+            role: {roleLabels[currentUserRole]}
           </p>
         </div>
         <nav className="space-y-5 px-4 py-5">

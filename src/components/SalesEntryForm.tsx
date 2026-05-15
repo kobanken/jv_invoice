@@ -31,6 +31,8 @@ export function SalesEntryForm({
   const [deliveryDay, setDeliveryDay] = useState("31");
   const [closingDay, setClosingDay] = useState<string>(String(customers[0]?.closingDay ?? "endOfMonth"));
   const [details, setDetails] = useState<SalesDetail[]>(initialSalesDetails);
+  const [hasLoadedSavedDetails, setHasLoadedSavedDetails] = useState(false);
+  const storageKey = `jv-invoice:${customerType}:sales-details`;
 
   useEffect(() => {
     const firstCustomer = liveCustomers[0];
@@ -43,6 +45,30 @@ export function SalesEntryForm({
       setClosingDay(String(firstCustomer.closingDay));
     }
   }, [customerId, liveCustomers]);
+
+  useEffect(() => {
+    try {
+      const savedDetails = window.localStorage.getItem(storageKey);
+      if (!savedDetails) return;
+      const parsedDetails = JSON.parse(savedDetails) as SalesDetail[];
+      if (Array.isArray(parsedDetails)) {
+        setDetails(parsedDetails);
+      }
+    } catch {
+      setDetails(initialSalesDetails);
+    } finally {
+      setHasLoadedSavedDetails(true);
+    }
+  }, [initialSalesDetails, storageKey]);
+
+  useEffect(() => {
+    if (!hasLoadedSavedDetails) return;
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(details));
+    } catch {
+      // ローカル保存に失敗しても、画面上の入力は維持します。
+    }
+  }, [details, hasLoadedSavedDetails, storageKey]);
 
   const selectedCustomer = liveCustomers.find((customer) => customer.customerId === customerId);
   const customerOptions = useMemo<CustomerSearchOption<string>[]>(() => {
@@ -194,6 +220,13 @@ export function SalesEntryForm({
             className="w-full rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300"
           >
             明細に追加
+          </button>
+          <button
+            type="button"
+            onClick={() => setDetails(initialSalesDetails)}
+            className="w-full rounded-md bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700"
+          >
+            入力保存を初期データに戻す
           </button>
         </div>
       </div>

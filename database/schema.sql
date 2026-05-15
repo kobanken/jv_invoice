@@ -87,6 +87,7 @@ CREATE TABLE delivery_items (
 CREATE TABLE invoice_summaries (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
   customer_id INT UNSIGNED NOT NULL,
+  store_id INT UNSIGNED NULL,
   billing_month CHAR(7) NOT NULL,
   payment_type ENUM('bank_transfer', 'cash') NOT NULL,
   delivery_method ENUM('gmail_pdf', 'line', 'hand_delivery', 'postal') NOT NULL,
@@ -96,10 +97,20 @@ CREATE TABLE invoice_summaries (
   subtotal INT NOT NULL DEFAULT 0,
   tax INT NOT NULL DEFAULT 0,
   total INT NOT NULL DEFAULT 0,
+  issue_status ENUM('not_issued', 'issued') NOT NULL DEFAULT 'not_issued',
+  delivery_status ENUM('not_delivered', 'delivered') NOT NULL DEFAULT 'not_delivered',
+  payment_status ENUM('unpaid', 'partial', 'paid', 'overpaid') NOT NULL DEFAULT 'unpaid',
+  issue_date DATE NULL,
+  delivery_date DATE NULL,
+  payment_date DATE NULL,
+  status_note TEXT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_invoice_summaries_customer_month (customer_id, billing_month),
+  UNIQUE KEY uq_invoice_summaries_customer_store_month (customer_id, store_id, billing_month),
   KEY idx_invoice_summaries_payment_type (payment_type),
-  CONSTRAINT fk_invoice_summaries_customer_id FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+  KEY idx_invoice_summaries_status (issue_status, delivery_status, payment_status),
+  KEY idx_invoice_summaries_store_id (store_id),
+  CONSTRAINT fk_invoice_summaries_customer_id FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+  CONSTRAINT fk_invoice_summaries_store_id FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

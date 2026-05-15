@@ -59,6 +59,7 @@ export function mapApiCustomersToCustomers(apiCustomers: ApiCustomer[], apiStore
 
   return apiCustomers.map((customer) => {
     const base = {
+      sourceApiCustomerId: customer.id,
       customerId: customer.customer_code,
       storeName: storeNamesByCustomerId.get(customer.id) ?? "未登録",
       billingName: customer.name,

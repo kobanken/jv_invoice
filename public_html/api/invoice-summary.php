@@ -12,4 +12,7 @@ if ($method === 'GET') {
 if ($method === 'POST') {
     save_invoice_summary();
 }
+if ($method === 'PUT' || $method === 'PATCH') {
+    update_invoice_summary_status();
+}
 json_error('許可されていないメソッドです。', 405);
