@@ -188,6 +188,7 @@ export function InvoicePreview({
               onChange={(event) => setClosingDay(event.target.value)}
               className="field mt-1 w-full font-normal"
             >
+              <option value="10">10日締め</option>
               <option value="15">15日締め</option>
               <option value="20">20日締め</option>
               <option value="endOfMonth">月末締め</option>
@@ -255,6 +256,7 @@ export function InvoicePreview({
 }
 
 function parseClosingDay(value: string): ClosingDay {
+  if (value === "10") return 10;
   if (value === "15") return 15;
   if (value === "20") return 20;
   return "endOfMonth";
@@ -440,7 +442,7 @@ function InvoiceSummaryBox({ summary }: { summary: InvoiceSummary | null }) {
     <div className="mt-6 ml-auto w-full max-w-sm space-y-1 text-sm print:mt-4 print:max-w-xs print:text-[10px]">
       <SummaryLine label="商品合計" value={summary.product_total} />
       <SummaryLine label="配達料" value={summary.delivery_fee_total} />
-      <SummaryLine label="その他手数料" value={summary.other_fee_total} />
+      <SummaryLine label="回収・その他" value={summary.other_fee_total} />
       <SummaryLine label="税込合計" value={summary.total} strong />
     </div>
   );

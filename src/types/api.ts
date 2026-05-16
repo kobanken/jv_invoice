@@ -1,6 +1,6 @@
 export type PaymentType = "bank_transfer" | "cash";
 export type ApiDeliveryMethod = "gmail_pdf" | "line" | "hand_delivery" | "postal";
-export type PriceCategory = "product" | "delivery_fee" | "other_fee";
+export type PriceCategory = "product" | "delivery_fee" | "collection" | "other_fee";
 export type ApiInvoiceIssueStatus = "not_issued" | "issued";
 export type ApiInvoiceDeliveryStatus = "not_delivered" | "delivered";
 export type ApiInvoicePaymentStatus = "unpaid" | "partial" | "paid" | "overpaid";

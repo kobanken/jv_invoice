@@ -113,6 +113,7 @@ export function InvoiceTable({
         />
         <select value={closingDay} onChange={(event) => setClosingDay(event.target.value)} className="field">
           <option value="">締め日すべて</option>
+          <option value="10">10日締め</option>
           <option value="15">15日締め</option>
           <option value="20">20日締め</option>
           <option value="endOfMonth">月末締め</option>

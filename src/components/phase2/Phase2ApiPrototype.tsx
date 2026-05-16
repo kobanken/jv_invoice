@@ -15,6 +15,7 @@ import type {
 import { apiBaseUrl, apiDelete, apiGet, apiPost, apiPut } from "@/lib/api/client";
 import { formatApiClosingDay, formatApiDeliveryMethod, formatPaymentType, formatPriceCategory } from "@/lib/api/format";
 import { formatCurrencyJPY } from "@/lib/format";
+import { alphaNumericInputAttributes, numericInputAttributes } from "@/lib/inputAttributes";
 
 type TabKey = "customers" | "stores" | "prices" | "deliveries" | "details" | "summary";
 
@@ -24,6 +25,7 @@ type DeliveryDraft = {
 };
 
 type DeliveryDraftUpdater = DeliveryDraft | ((current: DeliveryDraft) => DeliveryDraft);
+type SaveStatus = "idle" | "dirty" | "saving" | "saved";
 
 const tabs: { key: TabKey; label: string }[] = [
   { key: "customers", label: "顧客マスタ" },
@@ -37,6 +39,7 @@ const tabs: { key: TabKey; label: string }[] = [
 const tabsWithTargetSelector: TabKey[] = ["deliveries", "details", "summary"];
 
 const closingDayOptions = [
+  { value: 10, label: "10日" },
   { value: 15, label: "15日" },
   { value: 20, label: "20日" },
   { value: 31, label: "月末" },
@@ -189,8 +192,10 @@ export function Phase2ApiPrototype() {
     try {
       await action();
       setMessage(doneMessage);
+      return true;
     } catch (exception) {
       setError(toErrorMessage(exception));
+      return false;
     }
   }
 
@@ -353,7 +358,7 @@ function CustomerPanel({
 }: {
   customers: ApiCustomer[];
   onReload: () => Promise<void>;
-  runAction: (action: () => Promise<void>, doneMessage: string) => Promise<void>;
+  runAction: (action: () => Promise<void>, doneMessage: string) => Promise<boolean>;
 }) {
   const [form, setForm] = useState(emptyCustomer);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -448,7 +453,12 @@ function CustomerPanel({
             <div className="mt-4 space-y-3">
               <label className="block text-sm font-semibold text-slate-700">
                 顧客コード
-                <input className="field mt-1 w-full font-normal" value={form.customer_code} onChange={(event) => setForm({ ...form, customer_code: event.target.value })} />
+                <input
+                  {...alphaNumericInputAttributes}
+                  className="field mt-1 w-full font-normal"
+                  value={form.customer_code}
+                  onChange={(event) => setForm({ ...form, customer_code: normalizeAlphaNumericInput(event.target.value) })}
+                />
               </label>
               <label className="block text-sm font-semibold text-slate-700">
                 請求先名
@@ -597,10 +607,11 @@ function StorePanel({
   customers: ApiCustomer[];
   stores: ApiStore[];
   onReload: () => Promise<void>;
-  runAction: (action: () => Promise<void>, doneMessage: string) => Promise<void>;
+  runAction: (action: () => Promise<void>, doneMessage: string) => Promise<boolean>;
 }) {
   const [form, setForm] = useState(emptyStore);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const customerOptions = useMemo<CustomerSearchOption<number>[]>(() => {
     return customers.map((customer) => ({
       value: customer.id,
@@ -608,6 +619,11 @@ function StorePanel({
       keywords: `${customer.name} ${customer.customer_code} ${customer.email ?? ""} ${customer.line_name ?? ""}`,
     }));
   }, [customers]);
+
+  function updateForm(nextForm: typeof emptyStore) {
+    setForm(nextForm);
+    setSaveStatus((current) => current === "saving" ? current : "dirty");
+  }
 
   async function submit() {
     const body = { ...form, customer_id: Number(form.customer_id), display_order: Number(form.display_order || 0) };
@@ -621,6 +637,12 @@ function StorePanel({
     await onReload();
   }
 
+  async function handleSave() {
+    setSaveStatus("saving");
+    const saved = await runAction(submit, "店舗を保存しました。");
+    setSaveStatus(saved ? "saved" : "dirty");
+  }
+
   return (
     <MasterTablePanel title="店舗登録・編集">
       <div className="surface p-5">
@@ -629,25 +651,24 @@ function StorePanel({
             label="顧客"
             value={form.customer_id}
             options={customerOptions}
-            onChange={(customerId) => setForm({ ...form, customer_id: customerId })}
+            onChange={(customerId) => updateForm({ ...form, customer_id: customerId })}
             emptyOption={{ value: 0, label: "顧客選択" }}
             className="text-slate-700"
           />
           <label className="block text-sm font-semibold text-slate-700">
             店舗名
-            <input className="field mt-1 w-full font-normal" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+            <input className="field mt-1 w-full font-normal" value={form.name} onChange={(event) => updateForm({ ...form, name: event.target.value })} />
           </label>
           <label className="block text-sm font-semibold text-slate-700">
             表示順
             <input
               className="field mt-1 w-full font-normal"
-              inputMode="numeric"
-              pattern="[0-9]*"
+              {...numericInputAttributes}
               value={form.display_order}
-              onChange={(event) => setForm({ ...form, display_order: normalizeIntegerInput(event.target.value) })}
+              onChange={(event) => updateForm({ ...form, display_order: normalizeIntegerInput(event.target.value) })}
             />
           </label>
-          <button type="button" className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white" onClick={() => runAction(submit, "店舗を保存しました。")}>{editingId ? "更新" : "登録"}</button>
+          <SaveButton status={saveStatus} idleLabel={editingId ? "更新" : "登録"} onClick={handleSave} />
         </div>
       </div>
       <div className="table-scroll">
@@ -660,7 +681,7 @@ function StorePanel({
                 <td className="px-4 py-3 font-semibold">{store.name}</td>
                 <td className="px-4 py-3">{store.display_order}</td>
                 <td className="space-x-2 px-4 py-3">
-                  <button type="button" className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold" onClick={() => { setEditingId(store.id); setForm({ customer_id: store.customer_id, name: store.name, display_order: String(store.display_order), note: store.note ?? "" }); }}>編集</button>
+                  <button type="button" className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold" onClick={() => { setEditingId(store.id); setForm({ customer_id: store.customer_id, name: store.name, display_order: String(store.display_order), note: store.note ?? "" }); setSaveStatus("idle"); }}>編集</button>
                   <button type="button" className="rounded bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700" onClick={() => runAction(async () => { await apiDelete("/stores.php", { id: store.id }); await onReload(); }, "店舗を削除しました。")}>削除</button>
                 </td>
               </tr>
@@ -683,10 +704,11 @@ function PricePanel({
   stores: ApiStore[];
   prices: ApiPrice[];
   onReload: () => Promise<void>;
-  runAction: (action: () => Promise<void>, doneMessage: string) => Promise<void>;
+  runAction: (action: () => Promise<void>, doneMessage: string) => Promise<boolean>;
 }) {
   const [form, setForm] = useState(emptyPrice);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const candidateStores = stores.filter((store) => store.customer_id === Number(form.customer_id));
   const customerOptions = useMemo<CustomerSearchOption<number>[]>(() => {
     return customers.map((customer) => ({
@@ -695,6 +717,11 @@ function PricePanel({
       keywords: `${customer.name} ${customer.customer_code} ${customer.email ?? ""} ${customer.line_name ?? ""}`,
     }));
   }, [customers]);
+
+  function updateForm(nextForm: typeof emptyPrice) {
+    setForm(nextForm);
+    setSaveStatus((current) => current === "saving" ? current : "dirty");
+  }
 
   async function submit() {
     const body = {
@@ -714,6 +741,12 @@ function PricePanel({
     await onReload();
   }
 
+  async function handleSave() {
+    setSaveStatus("saving");
+    const saved = await runAction(submit, "単価を保存しました。");
+    setSaveStatus(saved ? "saved" : "dirty");
+  }
+
   return (
     <MasterTablePanel title="顧客別単価登録・編集">
       <div className="surface p-5">
@@ -722,44 +755,44 @@ function PricePanel({
             label="顧客"
             value={form.customer_id}
             options={customerOptions}
-            onChange={(customerId) => setForm({ ...form, customer_id: customerId, store_id: "" })}
+            onChange={(customerId) => updateForm({ ...form, customer_id: customerId, store_id: "" })}
             emptyOption={{ value: 0, label: "顧客選択" }}
             className="text-slate-700"
           />
           <label className="block text-sm font-semibold text-slate-700">
             店舗
-            <select className="field mt-1 w-full font-normal" value={form.store_id} onChange={(event) => setForm({ ...form, store_id: event.target.value })}>
+            <select className="field mt-1 w-full font-normal" value={form.store_id} onChange={(event) => updateForm({ ...form, store_id: event.target.value })}>
               <option value="">全店舗共通</option>
               {candidateStores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
             </select>
           </label>
           <label className="block text-sm font-semibold text-slate-700">
             商品名
-            <input className="field mt-1 w-full font-normal" value={form.item_name} onChange={(event) => setForm({ ...form, item_name: event.target.value })} />
+            <input className="field mt-1 w-full font-normal" value={form.item_name} onChange={(event) => updateForm({ ...form, item_name: event.target.value })} />
           </label>
           <label className="block text-sm font-semibold text-slate-700">
             単価
             <input
               className="field mt-1 w-full font-normal"
-              inputMode="numeric"
-              pattern="[0-9]*"
+              {...numericInputAttributes}
               value={form.unit_price}
-              onChange={(event) => setForm({ ...form, unit_price: normalizeIntegerInput(event.target.value) })}
+              onChange={(event) => updateForm({ ...form, unit_price: normalizeIntegerInput(event.target.value) })}
             />
           </label>
           <label className="block text-sm font-semibold text-slate-700">
             区分
-            <select className="field mt-1 w-full font-normal" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value as PriceCategory })}>
+            <select className="field mt-1 w-full font-normal" value={form.category} onChange={(event) => updateForm({ ...form, category: event.target.value as PriceCategory })}>
               <option value="product">商品</option>
               <option value="delivery_fee">配達料</option>
+              <option value="collection">回収</option>
               <option value="other_fee">その他手数料</option>
             </select>
           </label>
           <label className="block text-sm font-semibold text-slate-700">
             開始日
-            <input className="field mt-1 w-full font-normal" type="date" value={form.start_date} onChange={(event) => setForm({ ...form, start_date: event.target.value })} />
+            <input className="field mt-1 w-full font-normal" type="date" value={form.start_date} onChange={(event) => updateForm({ ...form, start_date: event.target.value })} />
           </label>
-          <button type="button" className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white" onClick={() => runAction(submit, "単価を保存しました。")}>{editingId ? "更新" : "登録"}</button>
+          <SaveButton status={saveStatus} idleLabel={editingId ? "更新" : "登録"} onClick={handleSave} />
         </div>
       </div>
       <div className="table-scroll">
@@ -775,7 +808,7 @@ function PricePanel({
                 <td className="px-4 py-3">{formatCurrencyJPY(Number(price.unit_price))}</td>
                 <td className="px-4 py-3">{price.start_date}</td>
                 <td className="space-x-2 px-4 py-3">
-                  <button type="button" className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold" onClick={() => { setEditingId(price.id); setForm({ customer_id: price.customer_id, store_id: price.store_id ? String(price.store_id) : "", item_name: price.item_name, unit_price: String(price.unit_price), category: price.category, start_date: price.start_date, end_date: price.end_date ?? "", note: price.note ?? "" }); }}>編集</button>
+                  <button type="button" className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold" onClick={() => { setEditingId(price.id); setForm({ customer_id: price.customer_id, store_id: price.store_id ? String(price.store_id) : "", item_name: price.item_name, unit_price: String(price.unit_price), category: price.category, start_date: price.start_date, end_date: price.end_date ?? "", note: price.note ?? "" }); setSaveStatus("idle"); }}>編集</button>
                   <button type="button" className="rounded bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700" onClick={() => runAction(async () => { await apiDelete("/prices.php", { id: price.id }); await onReload(); }, "単価を削除しました。")}>削除</button>
                 </td>
               </tr>
@@ -806,12 +839,37 @@ function DeliveryEntryPanel({
   deliveryDrafts: Record<string, DeliveryDraft>;
   onDraftChange: (storeId: number, updater: DeliveryDraftUpdater) => void;
   onReload: () => Promise<void>;
-  runAction: (action: () => Promise<void>, doneMessage: string) => Promise<void>;
+  runAction: (action: () => Promise<void>, doneMessage: string) => Promise<boolean>;
 }) {
+  const [storeSaveStatuses, setStoreSaveStatuses] = useState<Record<string, SaveStatus>>({});
+  const [allSaveStatus, setAllSaveStatus] = useState<SaveStatus>("idle");
   const deliveryStores = useMemo(() => {
     if (selectedStoreId) return stores.filter((store) => store.id === selectedStoreId);
     return stores;
   }, [selectedStoreId, stores]);
+
+  useEffect(() => {
+    setStoreSaveStatuses({});
+    setAllSaveStatus("idle");
+  }, [billingMonth, selectedCustomerId, selectedStoreId]);
+
+  function getStoreSaveKey(storeId: number) {
+    return getDeliveryDraftKey(selectedCustomerId, storeId, billingMonth);
+  }
+
+  function setStoreSaveStatus(storeId: number, status: SaveStatus) {
+    setStoreSaveStatuses((current) => ({ ...current, [getStoreSaveKey(storeId)]: status }));
+  }
+
+  function markStoreDirty(storeId: number) {
+    setStoreSaveStatus(storeId, "dirty");
+    setAllSaveStatus((current) => current === "saving" ? current : "dirty");
+  }
+
+  function handleUserDraftChange(storeId: number, updater: DeliveryDraftUpdater) {
+    markStoreDirty(storeId);
+    onDraftChange(storeId, updater);
+  }
 
   async function submit() {
     const storeInputs = deliveryStores.map((store) => {
@@ -840,6 +898,22 @@ function DeliveryEntryPanel({
     await onReload();
   }
 
+  async function handleSaveAll() {
+    setAllSaveStatus("saving");
+    deliveryStores.forEach((store) => {
+      if (hasDeliveryDraftInput(deliveryDrafts[getDeliveryDraftKey(selectedCustomerId, store.id, billingMonth)] ?? createEmptyDeliveryDraft())) {
+        setStoreSaveStatus(store.id, "saving");
+      }
+    });
+    const saved = await runAction(submit, "全店舗の納品データを保存しました。");
+    setAllSaveStatus(saved ? "saved" : "dirty");
+    deliveryStores.forEach((store) => {
+      if (hasDeliveryDraftInput(deliveryDrafts[getDeliveryDraftKey(selectedCustomerId, store.id, billingMonth)] ?? createEmptyDeliveryDraft())) {
+        setStoreSaveStatus(store.id, saved ? "saved" : "dirty");
+      }
+    });
+  }
+
   async function submitStore(store: ApiStore) {
     const draft = deliveryDrafts[getDeliveryDraftKey(selectedCustomerId, store.id, billingMonth)] ?? createEmptyDeliveryDraft();
     await saveDeliveryStoreInput({
@@ -850,6 +924,13 @@ function DeliveryEntryPanel({
       prices: getVisibleDeliveryPrices(prices, selectedCustomerId, store.id),
     });
     await onReload();
+  }
+
+  async function handleSaveStore(store: ApiStore) {
+    setStoreSaveStatus(store.id, "saving");
+    const saved = await runAction(() => submitStore(store), `${store.name}の納品データを保存しました。`);
+    setStoreSaveStatus(store.id, saved ? "saved" : "dirty");
+    setAllSaveStatus((current) => current === "saving" ? current : saved ? current : "dirty");
   }
 
   if (!selectedCustomerId) {
@@ -876,12 +957,14 @@ function DeliveryEntryPanel({
             prices={prices}
             draft={draft}
             onDraftChange={onDraftChange}
-            onSave={() => runAction(() => submitStore(store), `${store.name}の納品データを保存しました。`)}
+            onUserDraftChange={handleUserDraftChange}
+            saveStatus={storeSaveStatuses[getStoreSaveKey(store.id)] ?? "idle"}
+            onSave={() => handleSaveStore(store)}
           />
         );
       })}
       {deliveryStores.length > 1 ? (
-        <button type="button" disabled={!selectedCustomerId} className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300" onClick={() => runAction(submit, "全店舗の納品データを保存しました。")}>全店舗分を保存</button>
+        <SaveButton status={allSaveStatus} idleLabel="全店舗分を保存" disabled={!selectedCustomerId} onClick={handleSaveAll} />
       ) : null}
     </div>
   );
@@ -894,6 +977,8 @@ function DeliveryEntryStoreCard({
   prices,
   draft,
   onDraftChange,
+  onUserDraftChange,
+  saveStatus,
   onSave,
 }: {
   store: ApiStore;
@@ -902,6 +987,8 @@ function DeliveryEntryStoreCard({
   prices: ApiPrice[];
   draft: DeliveryDraft;
   onDraftChange: (storeId: number, updater: DeliveryDraftUpdater) => void;
+  onUserDraftChange: (storeId: number, updater: DeliveryDraftUpdater) => void;
+  saveStatus: SaveStatus;
   onSave: () => void;
 }) {
   const visiblePrices = useMemo(() => {
@@ -909,8 +996,13 @@ function DeliveryEntryStoreCard({
   }, [prices, selectedCustomerId, store.id]);
   const productPrices = useMemo(() => visiblePrices.filter((price) => price.category === "product"), [visiblePrices]);
   const deliveryFee = useMemo(() => visiblePrices.find((price) => price.category === "delivery_fee"), [visiblePrices]);
+  const collectionFee = useMemo(() => visiblePrices.find((price) => price.category === "collection"), [visiblePrices]);
   const deliveryDays = ensureDeliveryEntryCount(draft.deliveryDays);
   const quantities = draft.quantities;
+  const productQuantitiesByDate = deliveryDays.map((day, index) => {
+    if (!day) return false;
+    return productPrices.some((price) => Number(ensureDeliveryEntryCount(quantities[String(price.id)])[index] || 0) > 0);
+  });
 
   useEffect(() => {
     onDraftChange(store.id, (currentDraft) => {
@@ -929,7 +1021,7 @@ function DeliveryEntryStoreCard({
     <section className="surface overflow-hidden">
       <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <h3 className="text-base font-bold">{store.name}</h3>
-        <button type="button" className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white" onClick={onSave}>この店舗を保存</button>
+        <SaveButton status={saveStatus} idleLabel="この店舗を保存" onClick={onSave} />
       </div>
       <div className="table-scroll">
         <table className="min-w-[2140px] text-left text-sm">
@@ -950,13 +1042,12 @@ function DeliveryEntryStoreCard({
                 <td key={index} className="px-2 py-2">
                   <input
                     className="field w-20 text-right"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
+                    {...numericInputAttributes}
                     placeholder="日"
                     value={day}
                     onChange={(event) => {
                       const nextDeliveryDays = deliveryDays.map((item, itemIndex) => itemIndex === index ? normalizeDayInput(event.target.value, billingMonth) : item);
-                      onDraftChange(store.id, (currentDraft) => ({ ...currentDraft, deliveryDays: nextDeliveryDays }));
+                      onUserDraftChange(store.id, (currentDraft) => ({ ...currentDraft, deliveryDays: nextDeliveryDays }));
                     }}
                   />
                 </td>
@@ -975,12 +1066,11 @@ function DeliveryEntryStoreCard({
                     <td key={index} className="px-2 py-2">
                       <input
                         className="field w-20 text-right"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
+                        {...numericInputAttributes}
                         value={value}
                         onChange={(event) => {
                           const nextRow = row.map((item, itemIndex) => itemIndex === index ? normalizeIntegerInput(event.target.value) : item);
-                          onDraftChange(store.id, (currentDraft) => ({
+                          onUserDraftChange(store.id, (currentDraft) => ({
                             ...currentDraft,
                             quantities: { ...currentDraft.quantities, [String(price.id)]: nextRow },
                           }));
@@ -997,9 +1087,18 @@ function DeliveryEntryStoreCard({
               <tr className="bg-teal-50/40">
                 <td className="px-4 py-3 font-semibold">{deliveryFee.item_name}</td>
                 <td className="px-4 py-3 text-right">{formatCurrencyJPY(Number(deliveryFee.unit_price))}</td>
-                {deliveryDays.map((day, index) => <td key={index} className="px-4 py-3 text-center">{day ? 1 : ""}</td>)}
-                <td className="px-4 py-3 text-right font-semibold">{deliveryDays.filter(Boolean).length}</td>
-                <td className="px-4 py-3 text-right font-semibold">{formatCurrencyJPY(deliveryDays.filter(Boolean).length * Number(deliveryFee.unit_price))}</td>
+                {deliveryDays.map((day, index) => <td key={index} className="px-4 py-3 text-center">{day && productQuantitiesByDate[index] ? 1 : ""}</td>)}
+                <td className="px-4 py-3 text-right font-semibold">{productQuantitiesByDate.filter(Boolean).length}</td>
+                <td className="px-4 py-3 text-right font-semibold">{formatCurrencyJPY(productQuantitiesByDate.filter(Boolean).length * Number(deliveryFee.unit_price))}</td>
+              </tr>
+            ) : null}
+            {collectionFee ? (
+              <tr className="bg-amber-50/50">
+                <td className="px-4 py-3 font-semibold">{collectionFee.item_name}</td>
+                <td className="px-4 py-3 text-right">{formatCurrencyJPY(Number(collectionFee.unit_price))}</td>
+                {deliveryDays.map((day, index) => <td key={index} className="px-4 py-3 text-center">{day && !productQuantitiesByDate[index] ? 1 : ""}</td>)}
+                <td className="px-4 py-3 text-right font-semibold">{deliveryDays.filter((day, index) => day && !productQuantitiesByDate[index]).length}</td>
+                <td className="px-4 py-3 text-right font-semibold">{formatCurrencyJPY(deliveryDays.filter((day, index) => day && !productQuantitiesByDate[index]).length * Number(collectionFee.unit_price))}</td>
               </tr>
             ) : null}
           </tbody>
@@ -1066,7 +1165,7 @@ function InvoiceDetailPanel({
         <div className="w-full max-w-sm space-y-2 text-sm">
           <SummaryLine label="商品合計" value={summary?.product_total ?? 0} />
           <SummaryLine label="配達料" value={summary?.delivery_fee_total ?? 0} />
-          <SummaryLine label="その他手数料" value={summary?.other_fee_total ?? 0} />
+          <SummaryLine label="回収・その他" value={summary?.other_fee_total ?? 0} />
           <SummaryLine label="税込合計" value={summary?.total ?? 0} strong />
         </div>
       </div>
@@ -1239,6 +1338,7 @@ async function saveDeliveryStoreInput({
 }) {
   const productPrices = prices.filter((price) => price.category === "product");
   const deliveryFee = prices.find((price) => price.category === "delivery_fee");
+  const collectionFee = prices.find((price) => price.category === "collection");
   const deliveryDays = ensureDeliveryEntryCount(draft.deliveryDays);
   const quantities = draft.quantities;
   const deliveryDates = deliveryDays.map((day) => formatDeliveryDateFromDay(billingMonth, day));
@@ -1257,11 +1357,18 @@ async function saveDeliveryStoreInput({
     delivery_fee: deliveryFee
       ? { item_name: deliveryFee.item_name, unit_price: Number(deliveryFee.unit_price) }
       : null,
+    collection_fee: collectionFee
+      ? { item_name: collectionFee.item_name, unit_price: Number(collectionFee.unit_price) }
+      : null,
   });
 }
 
 function normalizeIntegerInput(value: string) {
   return value.replace(/\D/g, "");
+}
+
+function normalizeAlphaNumericInput(value: string) {
+  return value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
 }
 
 function normalizeSearchText(value: string) {
@@ -1304,8 +1411,14 @@ function SummaryPanel({
   billingMonth: string;
   summary: InvoiceSummary | null;
   onReload: () => Promise<void>;
-  runAction: (action: () => Promise<void>, doneMessage: string) => Promise<void>;
+  runAction: (action: () => Promise<void>, doneMessage: string) => Promise<boolean>;
 }) {
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+
+  useEffect(() => {
+    setSaveStatus("idle");
+  }, [billingMonth, selectedCustomerId, selectedStoreId]);
+
   async function saveSummary() {
     await apiPost("/invoice-summary.php", {
       customer_id: selectedCustomerId,
@@ -1314,18 +1427,25 @@ function SummaryPanel({
     });
     await onReload();
   }
+
+  async function handleSave() {
+    setSaveStatus("saving");
+    const saved = await runAction(saveSummary, "請求集計を保存しました。");
+    setSaveStatus(saved ? "saved" : "dirty");
+  }
+
   return (
     <div className="surface max-w-xl p-5">
       <h3 className="font-bold">請求集計</h3>
       <div className="mt-4 space-y-2 text-sm">
         <SummaryLine label="商品合計" value={summary?.product_total ?? 0} />
         <SummaryLine label="配達料" value={summary?.delivery_fee_total ?? 0} />
-        <SummaryLine label="その他手数料" value={summary?.other_fee_total ?? 0} />
+        <SummaryLine label="回収・その他" value={summary?.other_fee_total ?? 0} />
         <SummaryLine label="税抜合計" value={summary?.subtotal ?? 0} />
         <SummaryLine label="消費税" value={summary?.tax ?? 0} />
         <SummaryLine label="税込合計" value={summary?.total ?? 0} strong />
       </div>
-      <button type="button" disabled={!selectedCustomerId} className="mt-5 rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300" onClick={() => runAction(saveSummary, "請求集計を保存しました。")}>集計を保存</button>
+      <SaveButton status={saveStatus} idleLabel="集計を保存" disabled={!selectedCustomerId} className="mt-5" onClick={handleSave} />
     </div>
   );
 }
@@ -1345,6 +1465,45 @@ function MasterTablePanel({ title, children }: { title: string; children: React.
       <h3 className="text-base font-bold">{title}</h3>
       {children}
     </section>
+  );
+}
+
+function SaveButton({
+  status,
+  idleLabel,
+  disabled = false,
+  className = "",
+  onClick,
+}: {
+  status: SaveStatus;
+  idleLabel: string;
+  disabled?: boolean;
+  className?: string;
+  onClick: () => void;
+}) {
+  const isSaving = status === "saving";
+  const isSaved = status === "saved";
+  const buttonLabel = isSaving ? "保存中..." : isSaved ? "保存済み" : idleLabel;
+  const statusLabel = status === "dirty" ? "未保存の変更あり" : isSaved ? "保存済み" : "";
+  const buttonClassName = [
+    "rounded-md px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed",
+    isSaved ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200" : "bg-teal-700 text-white hover:bg-teal-800",
+    isSaving ? "opacity-60" : "",
+    disabled ? "bg-slate-300 text-white hover:bg-slate-300" : "",
+    className,
+  ].filter(Boolean).join(" ");
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <button type="button" disabled={disabled || isSaving || isSaved} className={buttonClassName} onClick={onClick}>
+        {buttonLabel}
+      </button>
+      {statusLabel ? (
+        <span className={isSaved ? "text-xs font-semibold text-emerald-700" : "text-xs font-semibold text-amber-700"}>
+          {statusLabel}
+        </span>
+      ) : null}
+    </div>
   );
 }
 

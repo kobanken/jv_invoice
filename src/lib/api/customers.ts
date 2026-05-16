@@ -96,6 +96,7 @@ function filterCustomersByType(customers: Customer[], customerType?: CustomerTyp
 }
 
 function toClosingDay(value: number): ClosingDay {
+  if (value === 10) return 10;
   if (value === 15) return 15;
   if (value === 20) return 20;
   return "endOfMonth";

@@ -61,6 +61,10 @@ input[type="number"]::-webkit-outer-spin-button {
   font-size: 0.875rem;
 }
 
+.field[lang="en"] {
+  ime-mode: disabled;
+}
+
 .table-scroll {
   overflow-x: auto;
   border: 1px solid var(--line);

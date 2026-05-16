@@ -67,13 +67,8 @@ function save_deliveries(): void
         $normalizedDates[$index] = $date;
     }
 
-    $deliveryFee = $data['delivery_fee'] ?? null;
-    $deliveryFeeUnitPrice = 0;
-    $deliveryFeeName = '配達料';
-    if (is_array($deliveryFee)) {
-        $deliveryFeeUnitPrice = isset($deliveryFee['unit_price']) && $deliveryFee['unit_price'] !== '' ? (int) $deliveryFee['unit_price'] : 0;
-        $deliveryFeeName = trim((string) ($deliveryFee['item_name'] ?? '配達料')) ?: '配達料';
-    }
+    $deliveryFee = normalize_auto_fee($data['delivery_fee'] ?? null, '配達料', 'delivery_fee');
+    $collectionFee = normalize_auto_fee($data['collection_fee'] ?? null, '回収', 'collection');
 
     $pdo = db();
     $pdo->beginTransaction();
@@ -95,14 +90,11 @@ function save_deliveries(): void
             }
 
             $dateItems = build_items_for_delivery_date($items, $index);
-            if ($deliveryFeeUnitPrice > 0) {
-                $dateItems[] = [
-                    'item_name' => $deliveryFeeName,
-                    'quantity' => 1,
-                    'unit_price' => $deliveryFeeUnitPrice,
-                    'category' => 'delivery_fee',
-                    'note' => null,
-                ];
+            $hasProductItems = count($dateItems) > 0;
+            if ($hasProductItems && $deliveryFee !== null) {
+                $dateItems[] = $deliveryFee;
+            } elseif (!$hasProductItems && $collectionFee !== null) {
+                $dateItems[] = $collectionFee;
             }
             if (count($dateItems) === 0) {
                 continue;
@@ -182,11 +174,30 @@ function build_items_for_delivery_date(array $items, int $dateIndex): array
             'item_name' => require_string($item, 'item_name', 255),
             'quantity' => $quantity,
             'unit_price' => require_int_value($item, 'unit_price', 0),
-            'category' => require_enum($item, 'category', ['product', 'delivery_fee', 'other_fee']),
+            'category' => require_enum($item, 'category', ['product', 'delivery_fee', 'collection', 'other_fee']),
             'note' => optional_string($item, 'note', 1000),
         ];
     }
     return $result;
+}
+
+function normalize_auto_fee($fee, string $defaultName, string $category): ?array
+{
+    if (!is_array($fee)) {
+        return null;
+    }
+    $unitPrice = isset($fee['unit_price']) && $fee['unit_price'] !== '' ? (int) $fee['unit_price'] : 0;
+    if ($unitPrice <= 0) {
+        return null;
+    }
+    $name = trim((string) ($fee['item_name'] ?? $defaultName)) ?: $defaultName;
+    return [
+        'item_name' => $name,
+        'quantity' => 1,
+        'unit_price' => $unitPrice,
+        'category' => $category,
+        'note' => null,
+    ];
 }
 
 function build_horizontal_delivery_view(array $rows): array

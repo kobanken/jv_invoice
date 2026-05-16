@@ -35,7 +35,7 @@ function save_price(?int $id = null, ?array $data = null): void
         'store_id' => isset($data['store_id']) && $data['store_id'] !== '' ? (int) $data['store_id'] : null,
         'item_name' => require_string($data, 'item_name', 255),
         'unit_price' => require_int_value($data, 'unit_price', 0),
-        'category' => require_enum($data, 'category', ['product', 'delivery_fee', 'other_fee']),
+        'category' => require_enum($data, 'category', ['product', 'delivery_fee', 'collection', 'other_fee']),
         'start_date' => optional_date($data, 'start_date') ?? date('Y-m-d'),
         'end_date' => optional_date($data, 'end_date'),
         'note' => optional_string($data, 'note', 1000),

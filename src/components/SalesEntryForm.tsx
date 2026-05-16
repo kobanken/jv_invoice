@@ -7,6 +7,7 @@ import { useLiveCustomers } from "@/lib/api/customers";
 import { calculateSalesAmount } from "@/lib/invoices";
 import { getCustomerPrice } from "@/lib/prices";
 import { formatClosingDay, formatCurrencyJPY } from "@/lib/format";
+import { numericInputAttributes } from "@/lib/inputAttributes";
 
 type Props = {
   customerType: CustomerType;
@@ -145,8 +146,7 @@ export function SalesEntryForm({
             <label className="block text-sm font-semibold">
               納品日
               <input
-                inputMode="numeric"
-                pattern="[0-9]*"
+                {...numericInputAttributes}
                 placeholder="日"
                 value={deliveryDay}
                 onChange={(event) => setDeliveryDay(normalizeDayInput(event.target.value, targetMonth))}
@@ -161,6 +161,7 @@ export function SalesEntryForm({
               onChange={(event) => setClosingDay(event.target.value)}
               className="field mt-1 w-full font-normal"
             >
+              <option value="10">10日締め</option>
               <option value="15">15日締め</option>
               <option value="20">20日締め</option>
               <option value="endOfMonth">月末締め</option>
@@ -194,6 +195,7 @@ export function SalesEntryForm({
               <input
                 type="number"
                 min="1"
+                inputMode="numeric"
                 value={quantity}
                 onChange={(event) => setQuantity(Number(event.target.value))}
                 className="field mt-1 w-full font-normal"
@@ -264,6 +266,7 @@ export function SalesEntryForm({
 }
 
 function parseClosingDay(value: string): ClosingDay {
+  if (value === "10") return 10;
   if (value === "15") return 15;
   if (value === "20") return 20;
   return "endOfMonth";

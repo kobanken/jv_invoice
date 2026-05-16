@@ -1,6 +1,6 @@
 export type CustomerType = "bank" | "cash";
 export type InvoiceDeliveryMethod = "gmail_pdf" | "line" | "hand_delivery" | "postal";
-export type ClosingDay = 15 | 20 | "endOfMonth";
+export type ClosingDay = 10 | 15 | 20 | "endOfMonth";
 export type PaymentMethod = "bank_transfer" | "cash";
 export type InvoiceStatus = "not_issued" | "issued";
 export type DeliveryStatus = "not_delivered" | "delivered";

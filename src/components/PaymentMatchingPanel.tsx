@@ -58,6 +58,7 @@ export function PaymentMatchingPanel({
             入金額
             <input
               type="number"
+              inputMode="numeric"
               value={amount}
               onChange={(event) => setAmount(Number(event.target.value))}
               className="field mt-1 w-full font-normal"

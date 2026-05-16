@@ -77,8 +77,8 @@ function fetch_customer(int $id): array
 function validate_customer_payload(array $data): array
 {
     $closingDay = require_int_value($data, 'closing_day', 1);
-    if (!in_array($closingDay, [15, 20, 31], true)) {
-        json_error('closing_day は15、20、31（月末）のいずれかで指定してください。', 422);
+    if (!in_array($closingDay, [10, 15, 20, 31], true)) {
+        json_error('closing_day は10、15、20、31（月末）のいずれかで指定してください。', 422);
     }
 
     return [
