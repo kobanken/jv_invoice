@@ -4,6 +4,7 @@ declare(strict_types=1);
 function get_invoice_summary(): void
 {
     ensure_invoice_summary_store_column();
+    ensure_invoice_summary_delivery_columns();
     $customerId = int_param($_GET, 'customer_id', false);
     $storeId = int_param($_GET, 'store_id', false);
     if ($customerId === null) {
@@ -19,6 +20,7 @@ function save_invoice_summary(): void
 {
     ensure_invoice_summary_store_column();
     ensure_invoice_summary_status_columns();
+    ensure_invoice_summary_delivery_columns();
     $data = json_body();
     $customerId = require_int_value($data, 'customer_id', 1);
     $storeId = isset($data['store_id']) && $data['store_id'] !== '' && $data['store_id'] !== null
@@ -46,6 +48,7 @@ function save_invoice_summary(): void
             store_id = :store_id,
             payment_type = :payment_type,
             delivery_method = :delivery_method,
+            delivery_methods = :delivery_methods,
             product_total = :product_total,
             delivery_fee_total = :delivery_fee_total,
             other_fee_total = :other_fee_total,
@@ -59,6 +62,7 @@ function save_invoice_summary(): void
             'store_id' => $summary['store_id'],
             'payment_type' => $summary['payment_type'],
             'delivery_method' => $summary['delivery_method'],
+            'delivery_methods' => $summary['delivery_methods'],
             'product_total' => $summary['product_total'],
             'delivery_fee_total' => $summary['delivery_fee_total'],
             'other_fee_total' => $summary['other_fee_total'],
@@ -68,9 +72,9 @@ function save_invoice_summary(): void
         ];
     } else {
         $stmt = db()->prepare('INSERT INTO invoice_summaries
-            (customer_id, store_id, billing_month, payment_type, delivery_method, product_total, delivery_fee_total, other_fee_total, subtotal, tax, total)
+            (customer_id, store_id, billing_month, payment_type, delivery_method, delivery_methods, product_total, delivery_fee_total, other_fee_total, subtotal, tax, total)
             VALUES
-            (:customer_id, :store_id, :billing_month, :payment_type, :delivery_method, :product_total, :delivery_fee_total, :other_fee_total, :subtotal, :tax, :total)');
+            (:customer_id, :store_id, :billing_month, :payment_type, :delivery_method, :delivery_methods, :product_total, :delivery_fee_total, :other_fee_total, :subtotal, :tax, :total)');
         $payload = $summary;
     }
     $stmt->execute($payload);
@@ -81,6 +85,7 @@ function update_invoice_summary_status(): void
 {
     ensure_invoice_summary_store_column();
     ensure_invoice_summary_status_columns();
+    ensure_invoice_summary_delivery_columns();
     $data = json_body();
     $id = require_int_value($data, 'id', 1);
 
@@ -131,7 +136,8 @@ function update_invoice_summary_status(): void
 
 function calculate_invoice_summary(int $customerId, string $billingMonth, ?int $storeId = null): array
 {
-    $customerStmt = db()->prepare('SELECT payment_type, delivery_method FROM customers WHERE id = :id');
+    ensure_customer_delivery_columns_for_invoice_summary();
+    $customerStmt = db()->prepare('SELECT payment_type, delivery_method, delivery_methods FROM customers WHERE id = :id');
     $customerStmt->execute(['id' => $customerId]);
     $customer = $customerStmt->fetch();
     if (!$customer) {
@@ -166,13 +172,15 @@ function calculate_invoice_summary(int $customerId, string $billingMonth, ?int $
         }
     }
 
+    $deliveryMethods = parse_invoice_delivery_methods($customer['delivery_methods'] ?? null, $customer['delivery_method'] ?? null);
     $subtotal = $productTotal + $deliveryFeeTotal + $otherFeeTotal;
     $tax = calculate_tax($subtotal);
     return [
         'customer_id' => $customerId,
         'billing_month' => $billingMonth,
         'payment_type' => $customer['payment_type'],
-        'delivery_method' => $customer['delivery_method'],
+        'delivery_method' => $deliveryMethods[0],
+        'delivery_methods' => implode(',', $deliveryMethods),
         'product_total' => $productTotal,
         'delivery_fee_total' => $deliveryFeeTotal,
         'other_fee_total' => $otherFeeTotal,
@@ -185,6 +193,7 @@ function calculate_invoice_summary(int $customerId, string $billingMonth, ?int $
 function list_invoice_summaries(): void
 {
     ensure_invoice_summary_status_columns();
+    ensure_invoice_summary_delivery_columns();
     $paymentType = $_GET['payment_type'] ?? null;
     $billingMonth = isset($_GET['billing_month']) && $_GET['billing_month'] !== ''
         ? require_month($_GET, 'billing_month')
@@ -220,7 +229,7 @@ function list_invoice_summaries(): void
 
     $stmt = db()->prepare($sql);
     $stmt->execute($params);
-    json_success($stmt->fetchAll());
+    json_success(array_map('normalize_invoice_summary_row', $stmt->fetchAll()));
 }
 
 function get_invoice_summary_by_id(int $id): ?array
@@ -238,7 +247,7 @@ function get_invoice_summary_by_id(int $id): ?array
         LIMIT 1');
     $stmt->execute(['id' => $id]);
     $row = $stmt->fetch();
-    return $row ?: null;
+    return $row ? normalize_invoice_summary_row($row) : null;
 }
 
 function ensure_invoice_summary_store_column(): void
@@ -291,10 +300,77 @@ function ensure_invoice_summary_status_columns(): void
     $checked = true;
 }
 
+function ensure_invoice_summary_delivery_columns(): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+
+    $deliveryMethodStmt = db()->query("SHOW COLUMNS FROM invoice_summaries LIKE 'delivery_method'");
+    $deliveryMethodColumn = $deliveryMethodStmt->fetch();
+    if ($deliveryMethodColumn && stripos((string) ($deliveryMethodColumn['Type'] ?? ''), "'fax'") === false) {
+        db()->exec("ALTER TABLE invoice_summaries MODIFY delivery_method ENUM('gmail_pdf', 'fax', 'line', 'hand_delivery', 'postal') NOT NULL");
+    }
+
+    add_invoice_summary_column_if_missing('delivery_methods', 'ALTER TABLE invoice_summaries ADD COLUMN delivery_methods VARCHAR(100) NULL AFTER delivery_method');
+    db()->exec('UPDATE invoice_summaries SET delivery_methods = delivery_method WHERE delivery_methods IS NULL OR delivery_methods = ""');
+    $checked = true;
+}
+
+function ensure_customer_delivery_columns_for_invoice_summary(): void
+{
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+
+    $deliveryMethodStmt = db()->query("SHOW COLUMNS FROM customers LIKE 'delivery_method'");
+    $deliveryMethodColumn = $deliveryMethodStmt->fetch();
+    if ($deliveryMethodColumn && stripos((string) ($deliveryMethodColumn['Type'] ?? ''), "'fax'") === false) {
+        db()->exec("ALTER TABLE customers MODIFY delivery_method ENUM('gmail_pdf', 'fax', 'line', 'hand_delivery', 'postal') NOT NULL");
+    }
+
+    $deliveryMethodsStmt = db()->query("SHOW COLUMNS FROM customers LIKE 'delivery_methods'");
+    if (!$deliveryMethodsStmt->fetch()) {
+        db()->exec('ALTER TABLE customers ADD COLUMN delivery_methods VARCHAR(100) NULL AFTER delivery_method');
+        db()->exec('UPDATE customers SET delivery_methods = delivery_method WHERE delivery_methods IS NULL OR delivery_methods = ""');
+    }
+    $checked = true;
+}
+
 function add_invoice_summary_column_if_missing(string $columnName, string $sql): void
 {
     $stmt = db()->query("SHOW COLUMNS FROM invoice_summaries LIKE " . db()->quote($columnName));
     if (!$stmt->fetch()) {
         db()->exec($sql);
     }
+}
+
+function normalize_invoice_summary_row(array $row): array
+{
+    $row['delivery_methods'] = parse_invoice_delivery_methods($row['delivery_methods'] ?? null, $row['delivery_method'] ?? null);
+    return $row;
+}
+
+function parse_invoice_delivery_methods(?string $value, ?string $fallback): array
+{
+    $allowed = invoice_delivery_method_values();
+    $parts = preg_split('/[,、]/u', (string) ($value ?? '')) ?: [];
+    $methods = [];
+    foreach ($parts as $part) {
+        $method = trim($part);
+        if (in_array($method, $allowed, true) && !in_array($method, $methods, true)) {
+            $methods[] = $method;
+        }
+    }
+    if (!$methods && $fallback !== null && in_array($fallback, $allowed, true)) {
+        $methods[] = $fallback;
+    }
+    return $methods;
+}
+
+function invoice_delivery_method_values(): array
+{
+    return ['gmail_pdf', 'fax', 'line', 'hand_delivery', 'postal'];
 }

@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import type { ClosingDay, Invoice } from "@/types";
-import type { PaymentType, SavedInvoiceSummary } from "@/types/api";
+import type { ClosingDay, Invoice, InvoiceDeliveryMethod } from "@/types";
+import type { ApiDeliveryMethod, PaymentType, SavedInvoiceSummary } from "@/types/api";
 import { apiGet, apiPatch } from "@/lib/api/client";
-import { formatClosingDay, formatCurrencyJPY, formatDeliveryMethod, formatPaymentStatus } from "@/lib/format";
+import { formatClosingDay, formatCurrencyJPY, formatDeliveryMethods, formatPaymentStatus } from "@/lib/format";
 import { StatusBadge } from "@/components/StatusBadge";
 
 function matchesClosingDay(closingDay: ClosingDay, selected: string) {
@@ -67,7 +67,7 @@ export function InvoiceTable({
       return (
         (!targetMonth || invoice.targetMonth === targetMonth) &&
         matchesClosingDay(invoice.closingDay, closingDay) &&
-        (!deliveryMethod || invoice.deliveryMethod === deliveryMethod) &&
+        (!deliveryMethod || invoice.deliveryMethods.includes(deliveryMethod as InvoiceDeliveryMethod)) &&
         (!paymentStatus || invoice.paymentStatus === paymentStatus) &&
         (!issueStatus || invoice.issueStatus === issueStatus) &&
         (!deliveryStatus || invoice.deliveryStatus === deliveryStatus)
@@ -119,8 +119,9 @@ export function InvoiceTable({
           <option value="endOfMonth">月末締め</option>
         </select>
         <select value={deliveryMethod} onChange={(event) => setDeliveryMethod(event.target.value)} className="field">
-          <option value="">請求書区分すべて</option>
-          <option value="gmail_pdf">Gmail PDF</option>
+          <option value="">送付方法すべて</option>
+          <option value="gmail_pdf">PDF</option>
+          <option value="fax">FAX</option>
           <option value="line">LINE</option>
           <option value="hand_delivery">手渡し</option>
           <option value="postal">郵送</option>
@@ -155,7 +156,7 @@ export function InvoiceTable({
               <th className="px-4 py-3">対象月</th>
               <th className="px-4 py-3">締め日</th>
               <th className="px-4 py-3">金額</th>
-              <th className="px-4 py-3">区分</th>
+              <th className="px-4 py-3">送付方法</th>
               <th className="px-4 py-3">発行</th>
               <th className="px-4 py-3">送付</th>
               <th className="px-4 py-3">入金/集金</th>
@@ -175,7 +176,7 @@ export function InvoiceTable({
                 <td className="px-4 py-3">{invoice.targetMonth}</td>
                 <td className="px-4 py-3">{formatClosingDay(invoice.closingDay)}</td>
                 <td className="px-4 py-3 font-semibold">{formatCurrencyJPY(invoice.invoiceAmount)}</td>
-                <td className="px-4 py-3">{formatDeliveryMethod(invoice.deliveryMethod)}</td>
+                <td className="px-4 py-3">{formatDeliveryMethods(invoice.deliveryMethods)}</td>
                 <td className="px-4 py-3">
                   {invoice.sourceSummaryId ? (
                     <select
@@ -247,6 +248,7 @@ export function InvoiceTable({
 
 function summaryToInvoice(summary: SavedInvoiceSummary): Invoice {
   const customerType = summary.payment_type === "bank_transfer" ? "bank" : "cash";
+  const deliveryMethods = normalizeSummaryDeliveryMethods(summary.delivery_methods, summary.delivery_method);
   return {
     invoiceId: `INV-${summary.billing_month}-${summary.customer_id}-${summary.store_id ?? 0}`,
     sourceSummaryId: summary.id,
@@ -259,7 +261,8 @@ function summaryToInvoice(summary: SavedInvoiceSummary): Invoice {
     targetMonth: summary.billing_month,
     closingDay: summary.closing_day === 31 ? "endOfMonth" : summary.closing_day as ClosingDay,
     invoiceAmount: Number(summary.total),
-    deliveryMethod: summary.delivery_method,
+    deliveryMethod: deliveryMethods[0],
+    deliveryMethods,
     issueStatus: summary.issue_status ?? "not_issued",
     deliveryStatus: summary.delivery_status ?? "not_delivered",
     paymentStatus: summary.payment_status ?? "unpaid",
@@ -270,6 +273,25 @@ function summaryToInvoice(summary: SavedInvoiceSummary): Invoice {
     statusNote: summary.status_note ?? undefined,
     notes: summary.status_note ?? "",
   };
+}
+
+function normalizeSummaryDeliveryMethods(
+  value: SavedInvoiceSummary["delivery_methods"],
+  fallback: ApiDeliveryMethod,
+): InvoiceDeliveryMethod[] {
+  const rawMethods = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : [];
+  const methods = rawMethods
+    .map((method) => method.trim())
+    .filter((method): method is InvoiceDeliveryMethod => isInvoiceDeliveryMethod(method));
+  return methods.length > 0 ? methods : [fallback];
+}
+
+function isInvoiceDeliveryMethod(value: string): value is InvoiceDeliveryMethod {
+  return ["gmail_pdf", "fax", "line", "hand_delivery", "postal"].includes(value);
 }
 
 function buildPreviewHref(invoice: Invoice) {

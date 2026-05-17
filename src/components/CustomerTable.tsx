@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { ClosingDay, Customer, CustomerType } from "@/types";
+import type { ClosingDay, Customer, CustomerType, InvoiceDeliveryMethod } from "@/types";
 import { useLiveCustomers } from "@/lib/api/customers";
-import { formatClosingDay, formatDeliveryMethod } from "@/lib/format";
+import { formatClosingDay, formatDeliveryMethods } from "@/lib/format";
 
 type Props = {
   customerType: CustomerType;
@@ -25,11 +25,14 @@ export function CustomerTable({ customerType, customers }: Props) {
   const filteredCustomers = useMemo(() => {
     return [...liveCustomers]
       .filter((customer) => {
-        const text = `${customer.customerId} ${customer.storeName} ${customer.billingName} ${customer.notes}`.toLowerCase();
+        const bankTransferNames = customer.customerType === "bank"
+          ? [customer.bankTransferName1, customer.bankTransferName2, customer.bankTransferName3].filter(Boolean).join(" ")
+          : "";
+        const text = `${customer.customerId} ${customer.storeName} ${customer.billingName} ${bankTransferNames} ${customer.notes}`.toLowerCase();
         return (
           text.includes(query.toLowerCase()) &&
           matchesClosingDay(customer.closingDay, closingDay) &&
-          (!deliveryMethod || customer.invoiceDeliveryMethod === deliveryMethod)
+          (!deliveryMethod || customer.invoiceDeliveryMethods.includes(deliveryMethod as InvoiceDeliveryMethod))
         );
       })
       .sort((a, b) => String(a[sortKey]).localeCompare(String(b[sortKey]), "ja"));
@@ -41,7 +44,7 @@ export function CustomerTable({ customerType, customers }: Props) {
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="顧客ID・店舗名で検索"
+          placeholder="顧客ID・店舗名・振込名義で検索"
           className="field"
         />
         <select
@@ -53,15 +56,16 @@ export function CustomerTable({ customerType, customers }: Props) {
           <option value="10">10日締め</option>
           <option value="15">15日締め</option>
           <option value="20">20日締め</option>
-          <option value="endOfMonth">月末締め</option>
+          <option value="endOfMonth">月末</option>
         </select>
         <select
           value={deliveryMethod}
           onChange={(event) => setDeliveryMethod(event.target.value)}
           className="field"
         >
-          <option value="">請求書区分すべて</option>
-          <option value="gmail_pdf">Gmail PDF</option>
+          <option value="">送付方法すべて</option>
+          <option value="gmail_pdf">PDF</option>
+          <option value="fax">FAX</option>
           <option value="line">LINE</option>
           <option value="hand_delivery">手渡し</option>
           <option value="postal">郵送</option>
@@ -84,7 +88,7 @@ export function CustomerTable({ customerType, customers }: Props) {
               <th className="px-4 py-3">店舗名</th>
               <th className="px-4 py-3">請求先名</th>
               <th className="px-4 py-3">締め日</th>
-              <th className="px-4 py-3">請求書区分</th>
+              <th className="px-4 py-3">送付方法</th>
               {customerType === "bank" ? (
                 <>
                   <th className="px-4 py-3">メール</th>
@@ -102,12 +106,12 @@ export function CustomerTable({ customerType, customers }: Props) {
                 <td className="px-4 py-3 font-semibold">{customer.customerId}</td>
                 <td className="px-4 py-3">{customer.storeName}</td>
                 <td className="px-4 py-3">{customer.billingName}</td>
-                <td className="px-4 py-3">{formatClosingDay(customer.closingDay)}</td>
-                <td className="px-4 py-3">{formatDeliveryMethod(customer.invoiceDeliveryMethod)}</td>
+                <td className="px-4 py-3">{formatCustomerClosingDay(customer.closingDay)}</td>
+                <td className="px-4 py-3">{formatDeliveryMethods(customer.invoiceDeliveryMethods)}</td>
                 {customer.customerType === "bank" ? (
                   <>
                     <td className="px-4 py-3">{customer.email || "-"}</td>
-                    <td className="px-4 py-3">{customer.bankTransferName1}</td>
+                    <td className="px-4 py-3">{formatBankTransferNames(customer)}</td>
                   </>
                 ) : (
                   <td className="px-4 py-3">{customer.collectionStaff}</td>
@@ -128,3 +132,14 @@ export function CustomerTable({ customerType, customers }: Props) {
 }
 
 export type { Customer };
+
+function formatCustomerClosingDay(closingDay: ClosingDay) {
+  return closingDay === "endOfMonth" ? "月末" : formatClosingDay(closingDay);
+}
+
+function formatBankTransferNames(customer: Customer) {
+  if (customer.customerType !== "bank") return "-";
+  return [customer.bankTransferName1, customer.bankTransferName2, customer.bankTransferName3]
+    .filter((name): name is string => Boolean(name))
+    .join(", ") || "-";
+}

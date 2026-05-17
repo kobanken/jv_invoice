@@ -1,4 +1,5 @@
 import type { BankCustomer, Invoice, PaymentCandidate, PaymentRecord } from "@/types";
+import { splitBankTransferNames } from "@/lib/api/customers";
 
 export function matchPaymentCandidates(
   paymentRecord: PaymentRecord,
@@ -18,7 +19,7 @@ export function matchPaymentCandidates(
         customer.bankTransferName1,
         customer.bankTransferName2 ?? "",
         customer.bankTransferName3 ?? "",
-      ].map((name) => name.replace(/\s/g, "").toUpperCase());
+      ].flatMap((name) => splitBankTransferNames(name)).map((name) => name.replace(/\s/g, "").toUpperCase());
       const reasons: string[] = [];
       let score = 0;
 

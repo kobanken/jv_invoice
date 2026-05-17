@@ -6,12 +6,17 @@ export function formatPaymentType(value: PaymentType) {
 
 export function formatApiDeliveryMethod(value: ApiDeliveryMethod) {
   const labels: Record<ApiDeliveryMethod, string> = {
-    gmail_pdf: "Gmail PDF",
+    gmail_pdf: "PDF",
+    fax: "FAX",
     line: "LINE",
     hand_delivery: "手渡し",
     postal: "郵送",
   };
   return labels[value];
+}
+
+export function formatApiDeliveryMethods(values: readonly ApiDeliveryMethod[]) {
+  return values.map(formatApiDeliveryMethod).join(" / ");
 }
 
 export function formatPriceCategory(value: PriceCategory) {

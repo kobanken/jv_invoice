@@ -94,6 +94,19 @@ input[type="number"]::-webkit-outer-spin-button {
     color: #020617;
   }
 
+  .invoice-print-statement .invoice-document-invoice,
+  .invoice-print-invoice .invoice-document-statement {
+    display: none !important;
+  }
+
+  .invoice-document {
+    break-after: page;
+  }
+
+  .invoice-document:last-child {
+    break-after: auto;
+  }
+
   .invoice-store-grid {
     align-items: start;
   }
@@ -109,5 +122,10 @@ input[type="number"]::-webkit-outer-spin-button {
   .invoice-compact-table th,
   .invoice-compact-table td {
     line-height: 1.2;
+  }
+
+  .invoice-statement-table {
+    table-layout: fixed;
+    line-height: 1.1;
   }
 }

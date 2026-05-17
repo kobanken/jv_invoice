@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CustomerSearchField, type CustomerSearchOption } from "@/components/CustomerSearchField";
 import type {
   ApiCustomer,
+  ApiDeliveryMethod,
   ApiPrice,
   ApiStore,
   DeliveryListResponse,
@@ -13,7 +14,7 @@ import type {
   PriceCategory,
 } from "@/types/api";
 import { apiBaseUrl, apiDelete, apiGet, apiPost, apiPut } from "@/lib/api/client";
-import { formatApiClosingDay, formatApiDeliveryMethod, formatPaymentType, formatPriceCategory } from "@/lib/api/format";
+import { formatApiClosingDay, formatApiDeliveryMethods, formatPaymentType, formatPriceCategory } from "@/lib/api/format";
 import { formatCurrencyJPY } from "@/lib/format";
 import { alphaNumericInputAttributes, numericInputAttributes } from "@/lib/inputAttributes";
 
@@ -45,6 +46,15 @@ const closingDayOptions = [
   { value: 31, label: "月末" },
 ];
 
+const deliveryMethodOptions: { value: ApiDeliveryMethod; label: string }[] = [
+  { value: "gmail_pdf", label: "PDF" },
+  { value: "fax", label: "FAX" },
+  { value: "postal", label: "郵送" },
+  { value: "line", label: "LINE" },
+  { value: "hand_delivery", label: "手渡し" },
+];
+
+const maxDeliveryMethodCount = 3;
 const deliveryEntryCount = 20;
 
 function createEmptyDeliveryEntries() {
@@ -63,13 +73,16 @@ const emptyCustomer = {
   name: "",
   honorific: "御中",
   payment_type: "bank_transfer",
-  delivery_method: "gmail_pdf",
+  delivery_method: "gmail_pdf" as ApiDeliveryMethod,
+  delivery_methods: ["gmail_pdf"] as ApiDeliveryMethod[],
   closing_day: 31,
   postal_code: "",
   address: "",
   email: "",
   line_name: "",
-  bank_transfer_name: "",
+  bank_transfer_name_1: "",
+  bank_transfer_name_2: "",
+  bank_transfer_name_3: "",
   note: "",
 };
 
@@ -370,14 +383,24 @@ function CustomerPanel({
     if (!normalizedQuery) return customers;
     return customers.filter((customer) => {
       const text = normalizeSearchText(
-        `${customer.customer_code} ${customer.name} ${customer.email ?? ""} ${customer.line_name ?? ""} ${customer.bank_transfer_name ?? ""} ${customer.note ?? ""}`,
+        `${customer.customer_code} ${customer.name} ${customer.email ?? ""} ${customer.line_name ?? ""} ${customer.bank_transfer_name ?? ""} ${normalizeDeliveryMethods(customer.delivery_methods, customer.delivery_method).join(" ")} ${customer.note ?? ""}`,
       );
       return text.includes(normalizedQuery);
     });
   }, [customers, query]);
 
   async function submit() {
-    const body = { ...form, closing_day: Number(form.closing_day) };
+    const { bank_transfer_name_1, bank_transfer_name_2, bank_transfer_name_3, ...customerForm } = form;
+    const deliveryMethods = normalizeDeliveryMethods(form.delivery_methods, form.delivery_method);
+    const body = {
+      ...customerForm,
+      delivery_method: deliveryMethods[0],
+      delivery_methods: deliveryMethods,
+      closing_day: Number(form.closing_day),
+      bank_transfer_name: form.payment_type === "bank_transfer"
+        ? normalizeBankTransferNames([bank_transfer_name_1, bank_transfer_name_2, bank_transfer_name_3])
+        : "",
+    };
     if (editingId) {
       await apiPut<ApiCustomer>("/customers.php", { id: editingId, ...body });
     } else {
@@ -396,19 +419,24 @@ function CustomerPanel({
   }
 
   function openEditForm(customer: ApiCustomer) {
+    const bankTransferNames = splitBankTransferNames(customer.bank_transfer_name);
+    const deliveryMethods = normalizeDeliveryMethods(customer.delivery_methods, customer.delivery_method);
     setEditingId(customer.id);
     setForm({
       customer_code: customer.customer_code,
       name: customer.name,
       honorific: customer.honorific,
       payment_type: customer.payment_type,
-      delivery_method: customer.delivery_method,
+      delivery_method: deliveryMethods[0],
+      delivery_methods: deliveryMethods,
       closing_day: customer.closing_day,
       postal_code: customer.postal_code ?? "",
       address: customer.address ?? "",
       email: customer.email ?? "",
       line_name: customer.line_name ?? "",
-      bank_transfer_name: customer.bank_transfer_name ?? "",
+      bank_transfer_name_1: bankTransferNames[0] ?? "",
+      bank_transfer_name_2: bankTransferNames[1] ?? "",
+      bank_transfer_name_3: bankTransferNames[2] ?? "",
       note: customer.note ?? "",
     });
     setIsFormOpen(true);
@@ -451,40 +479,67 @@ function CustomerPanel({
               </button>
             </div>
             <div className="mt-4 space-y-3">
-              <label className="block text-sm font-semibold text-slate-700">
-                顧客コード
-                <input
-                  {...alphaNumericInputAttributes}
-                  className="field mt-1 w-full font-normal"
-                  value={form.customer_code}
-                  onChange={(event) => setForm({ ...form, customer_code: normalizeAlphaNumericInput(event.target.value) })}
-                />
-              </label>
-              <label className="block text-sm font-semibold text-slate-700">
-                請求先名
-                <input className="field mt-1 w-full font-normal" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-              </label>
+              <div className="grid gap-3 sm:grid-cols-[10rem_minmax(0,1fr)]">
+                <label className="block text-sm font-semibold text-slate-700">
+                  顧客コード
+                  <input
+                    {...alphaNumericInputAttributes}
+                    className="field mt-1 w-full font-normal"
+                    value={form.customer_code}
+                    onChange={(event) => setForm({ ...form, customer_code: normalizeAlphaNumericInput(event.target.value) })}
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-slate-700">
+                  請求先名
+                  <input className="field mt-1 w-full font-normal" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+                </label>
+              </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block text-sm font-semibold text-slate-700">
                   支払区分
                   <select
                     className="field mt-1 w-full font-normal"
                     value={form.payment_type}
-                    onChange={(event) => setForm({ ...form, payment_type: event.target.value, bank_transfer_name: event.target.value === "bank_transfer" ? form.bank_transfer_name : "" })}
+                    onChange={(event) => setForm({
+                      ...form,
+                      payment_type: event.target.value,
+                      bank_transfer_name_1: event.target.value === "bank_transfer" ? form.bank_transfer_name_1 : "",
+                      bank_transfer_name_2: event.target.value === "bank_transfer" ? form.bank_transfer_name_2 : "",
+                      bank_transfer_name_3: event.target.value === "bank_transfer" ? form.bank_transfer_name_3 : "",
+                    })}
                   >
                     <option value="bank_transfer">振込</option>
                     <option value="cash">現金</option>
                   </select>
                 </label>
-                <label className="block text-sm font-semibold text-slate-700">
+                <div className="text-sm font-semibold text-slate-700">
                   請求書送付方法
-                  <select className="field mt-1 w-full font-normal" value={form.delivery_method} onChange={(event) => setForm({ ...form, delivery_method: event.target.value })}>
-                    <option value="gmail_pdf">Gmail PDF</option>
-                    <option value="line">LINE</option>
-                    <option value="hand_delivery">手渡し</option>
-                    <option value="postal">郵送</option>
-                  </select>
-                </label>
+                  <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {deliveryMethodOptions.map((option) => {
+                      const checked = form.delivery_methods.includes(option.value);
+                      const disabled = !checked && form.delivery_methods.length >= maxDeliveryMethodCount;
+                      return (
+                        <label
+                          key={option.value}
+                          className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-normal ${
+                            checked ? "border-teal-600 bg-teal-50 text-teal-900" : "border-slate-200 bg-white text-slate-700"
+                          } ${disabled ? "opacity-45" : ""}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={disabled}
+                            onChange={() => setForm((current) => ({
+                              ...current,
+                              ...toggleDeliveryMethod(current.delivery_methods, option.value),
+                            }))}
+                          />
+                          <span>{option.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="text-sm font-semibold text-slate-700">
@@ -505,10 +560,33 @@ function CustomerPanel({
                 </label>
               </div>
               {form.payment_type === "bank_transfer" ? (
-                <label className="block text-sm font-semibold text-slate-700">
-                  振込名義
-                  <input className="field mt-1 w-full font-normal" value={form.bank_transfer_name} onChange={(event) => setForm({ ...form, bank_transfer_name: event.target.value })} />
-                </label>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="block text-sm font-semibold text-slate-700">
+                    振込名義1
+                    <input
+                      className="field mt-1 w-full font-normal"
+                      value={form.bank_transfer_name_1}
+                      onChange={(event) => setForm({ ...form, bank_transfer_name_1: event.target.value })}
+                      placeholder="例: アオヤマサロン"
+                    />
+                  </label>
+                  <label className="block text-sm font-semibold text-slate-700">
+                    振込名義2
+                    <input
+                      className="field mt-1 w-full font-normal"
+                      value={form.bank_transfer_name_2}
+                      onChange={(event) => setForm({ ...form, bank_transfer_name_2: event.target.value })}
+                    />
+                  </label>
+                  <label className="block text-sm font-semibold text-slate-700">
+                    振込名義3
+                    <input
+                      className="field mt-1 w-full font-normal"
+                      value={form.bank_transfer_name_3}
+                      onChange={(event) => setForm({ ...form, bank_transfer_name_3: event.target.value })}
+                    />
+                  </label>
+                </div>
               ) : null}
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block text-sm font-semibold text-slate-700">
@@ -582,7 +660,7 @@ function CustomerPanel({
                 <td className="px-4 py-3">{customer.name}</td>
                 <td className="px-4 py-3">{formatPaymentType(customer.payment_type)}</td>
                 <td className="px-4 py-3">{customer.payment_type === "bank_transfer" ? customer.bank_transfer_name ?? "-" : "-"}</td>
-                <td className="px-4 py-3">{formatApiDeliveryMethod(customer.delivery_method)}</td>
+                <td className="px-4 py-3">{formatApiDeliveryMethods(normalizeDeliveryMethods(customer.delivery_methods, customer.delivery_method))}</td>
                 <td className="px-4 py-3">{formatApiClosingDay(Number(customer.closing_day))}</td>
                 <td className="max-w-[320px] px-4 py-3 text-slate-600">{customer.note ?? "-"}</td>
                 <td className="space-x-2 px-4 py-3">
@@ -1373,6 +1451,50 @@ function normalizeAlphaNumericInput(value: string) {
 
 function normalizeSearchText(value: string) {
   return value.toLowerCase().replace(/\s+/g, "");
+}
+
+function splitBankTransferNames(value?: string | null) {
+  return (value ?? "")
+    .split(/[,\u3001]/)
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+function normalizeBankTransferNames(values: string[]) {
+  return values
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+function normalizeDeliveryMethods(
+  values: ApiCustomer["delivery_methods"] | ApiDeliveryMethod[],
+  fallback: ApiDeliveryMethod,
+): ApiDeliveryMethod[] {
+  const rawMethods = Array.isArray(values)
+    ? values
+    : typeof values === "string"
+      ? values.split(",")
+      : [];
+  const methods = rawMethods
+    .map((method) => method.trim())
+    .filter((method): method is ApiDeliveryMethod => isApiDeliveryMethod(method));
+  return (methods.length > 0 ? methods : [fallback]).slice(0, maxDeliveryMethodCount);
+}
+
+function toggleDeliveryMethod(current: ApiDeliveryMethod[], method: ApiDeliveryMethod) {
+  const nextMethods = current.includes(method)
+    ? current.filter((item) => item !== method)
+    : [...current, method].slice(0, maxDeliveryMethodCount);
+  const deliveryMethods = nextMethods.length > 0 ? nextMethods : [method];
+  return {
+    delivery_method: deliveryMethods[0],
+    delivery_methods: deliveryMethods,
+  };
+}
+
+function isApiDeliveryMethod(value: string): value is ApiDeliveryMethod {
+  return deliveryMethodOptions.some((option) => option.value === value);
 }
 
 function normalizeDayInput(value: string, billingMonth: string) {

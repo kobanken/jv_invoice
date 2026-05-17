@@ -1,5 +1,5 @@
 export type CustomerType = "bank" | "cash";
-export type InvoiceDeliveryMethod = "gmail_pdf" | "line" | "hand_delivery" | "postal";
+export type InvoiceDeliveryMethod = "gmail_pdf" | "fax" | "line" | "hand_delivery" | "postal";
 export type ClosingDay = 10 | 15 | 20 | "endOfMonth";
 export type PaymentMethod = "bank_transfer" | "cash";
 export type InvoiceStatus = "not_issued" | "issued";
@@ -17,6 +17,7 @@ export type BaseCustomer = {
   billingName: string;
   closingDay: ClosingDay;
   invoiceDeliveryMethod: InvoiceDeliveryMethod;
+  invoiceDeliveryMethods: InvoiceDeliveryMethod[];
   email: string;
   postalAddress: string;
   isLineTarget: boolean;
@@ -90,6 +91,7 @@ export type Invoice = {
   closingDay: ClosingDay;
   invoiceAmount: number;
   deliveryMethod: InvoiceDeliveryMethod;
+  deliveryMethods: InvoiceDeliveryMethod[];
   issueStatus: InvoiceStatus;
   deliveryStatus: DeliveryStatus;
   paymentStatus: PaymentStatus;

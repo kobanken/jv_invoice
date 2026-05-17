@@ -22,12 +22,17 @@ export function formatClosingDay(closingDay: ClosingDay) {
 
 export function formatDeliveryMethod(method: InvoiceDeliveryMethod) {
   const labels: Record<InvoiceDeliveryMethod, string> = {
-    gmail_pdf: "Gmail PDF",
+    gmail_pdf: "PDF",
+    fax: "FAX",
     line: "LINE",
     hand_delivery: "手渡し",
     postal: "郵送",
   };
   return labels[method];
+}
+
+export function formatDeliveryMethods(methods: readonly InvoiceDeliveryMethod[]) {
+  return methods.map(formatDeliveryMethod).join(" / ");
 }
 
 export function formatPaymentStatus(status: PaymentStatus) {

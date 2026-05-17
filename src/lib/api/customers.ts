@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ApiCustomer, ApiStore, PaymentType } from "@/types/api";
-import type { BankCustomer, CashCustomer, ClosingDay, Customer, CustomerType } from "@/types";
+import type { ApiCustomer, ApiDeliveryMethod, ApiStore, PaymentType } from "@/types/api";
+import type { BankCustomer, CashCustomer, ClosingDay, Customer, CustomerType, InvoiceDeliveryMethod } from "@/types";
 import { apiGet } from "@/lib/api/client";
 
 const paymentTypeByCustomerType: Record<CustomerType, PaymentType> = {
@@ -58,16 +58,18 @@ export function mapApiCustomersToCustomers(apiCustomers: ApiCustomer[], apiStore
   });
 
   return apiCustomers.map((customer) => {
+    const deliveryMethods = normalizeApiDeliveryMethods(customer.delivery_methods, customer.delivery_method);
     const base = {
       sourceApiCustomerId: customer.id,
       customerId: customer.customer_code,
       storeName: storeNamesByCustomerId.get(customer.id) ?? "未登録",
       billingName: customer.name,
       closingDay: toClosingDay(customer.closing_day),
-      invoiceDeliveryMethod: customer.delivery_method,
+      invoiceDeliveryMethod: deliveryMethods[0],
+      invoiceDeliveryMethods: deliveryMethods,
       email: customer.email ?? "",
       postalAddress: [customer.postal_code, customer.address].filter(Boolean).join(" "),
-      isLineTarget: customer.delivery_method === "line",
+      isLineTarget: deliveryMethods.includes("line"),
       notes: customer.note ?? "",
       isActive: true,
     };
@@ -82,13 +84,23 @@ export function mapApiCustomersToCustomers(apiCustomers: ApiCustomer[], apiStore
       } satisfies CashCustomer;
     }
 
+    const bankTransferNames = splitBankTransferNames(customer.bank_transfer_name);
     return {
       ...base,
       customerType: "bank",
-      bankTransferName1: customer.bank_transfer_name || customer.name,
+      bankTransferName1: bankTransferNames[0] || customer.name,
+      bankTransferName2: bankTransferNames[1],
+      bankTransferName3: bankTransferNames.slice(2).join(", ") || undefined,
       paymentCheckMemo: customer.note ?? "",
     } satisfies BankCustomer;
   });
+}
+
+export function splitBankTransferNames(value?: string | null) {
+  return (value ?? "")
+    .split(/[,\u3001]/)
+    .map((name) => name.trim())
+    .filter(Boolean);
 }
 
 function filterCustomersByType(customers: Customer[], customerType?: CustomerType) {
@@ -100,4 +112,23 @@ function toClosingDay(value: number): ClosingDay {
   if (value === 15) return 15;
   if (value === 20) return 20;
   return "endOfMonth";
+}
+
+function normalizeApiDeliveryMethods(
+  value: ApiCustomer["delivery_methods"],
+  fallback: ApiDeliveryMethod,
+): InvoiceDeliveryMethod[] {
+  const rawMethods = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : [];
+  const methods = rawMethods
+    .map((method) => method.trim())
+    .filter((method): method is InvoiceDeliveryMethod => isInvoiceDeliveryMethod(method));
+  return methods.length > 0 ? methods : [fallback];
+}
+
+function isInvoiceDeliveryMethod(value: string): value is InvoiceDeliveryMethod {
+  return ["gmail_pdf", "fax", "line", "hand_delivery", "postal"].includes(value);
 }

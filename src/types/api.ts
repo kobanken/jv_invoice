@@ -1,5 +1,5 @@
 export type PaymentType = "bank_transfer" | "cash";
-export type ApiDeliveryMethod = "gmail_pdf" | "line" | "hand_delivery" | "postal";
+export type ApiDeliveryMethod = "gmail_pdf" | "fax" | "line" | "hand_delivery" | "postal";
 export type PriceCategory = "product" | "delivery_fee" | "collection" | "other_fee";
 export type ApiInvoiceIssueStatus = "not_issued" | "issued";
 export type ApiInvoiceDeliveryStatus = "not_delivered" | "delivered";
@@ -12,6 +12,7 @@ export type ApiCustomer = {
   honorific: string;
   payment_type: PaymentType;
   delivery_method: ApiDeliveryMethod;
+  delivery_methods?: ApiDeliveryMethod[] | string | null;
   closing_day: number;
   postal_code: string | null;
   address: string | null;
@@ -88,6 +89,7 @@ export type InvoiceSummary = {
   billing_month?: string;
   payment_type?: PaymentType;
   delivery_method?: ApiDeliveryMethod;
+  delivery_methods?: ApiDeliveryMethod[] | string | null;
   product_total: number;
   delivery_fee_total: number;
   other_fee_total: number;
@@ -104,6 +106,7 @@ export type SavedInvoiceSummary = InvoiceSummary & {
   billing_month: string;
   payment_type: PaymentType;
   delivery_method: ApiDeliveryMethod;
+  delivery_methods?: ApiDeliveryMethod[] | string | null;
   customer_code: string;
   customer_name: string;
   closing_day: number;
