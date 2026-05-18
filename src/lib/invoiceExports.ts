@@ -77,17 +77,13 @@ function drawInvoiceImage(
   context: CanvasRenderingContext2D,
   { customer, targetMonth, closingDayLabel, total, details, dueDate, periodLabel, notes }: InvoiceExportPayload,
 ) {
-  context.fillStyle = "#0f172a";
-  context.font = '700 54px Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif';
-  context.fillText("請求書", 88, 120);
-
   context.font = '400 30px Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif';
   context.fillStyle = "#475569";
   context.fillText(`${targetMonth} / ${closingDayLabel}`, 88, 172);
   context.fillText("JVクリーニング", 802, 120);
   context.font = '400 22px Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif';
   context.fillText("〒951-8053 新潟県新潟市中央区川端町2-12", 640, 166);
-  if (dueDate) context.fillText(`支払い期限: ${dueDate}`, 838, 204);
+  if (dueDate) context.fillText(`お支払い期限: ${dueDate}`, 818, 204);
 
   drawDivider(context, 88, 220, 1024, "#0f172a", 4);
 
@@ -99,17 +95,21 @@ function drawInvoiceImage(
   context.fillText(customer.storeName, 88, 356);
   if (periodLabel) context.fillText(`対象期間: ${periodLabel}`, 88, 400);
 
+  context.fillStyle = "#0f172a";
+  context.font = '700 54px Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif';
+  context.fillText("請求書", 88, 462);
   context.fillStyle = "#f8fafc";
-  roundRect(context, 716, 266, 396, 144, 16);
+  roundRect(context, 88, 492, 396, 144, 16);
   context.fill();
   context.fillStyle = "#64748b";
   context.font = '400 28px Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif';
-  context.fillText("ご請求金額", 760, 320);
+  context.fillText("ご請求金額", 132, 546);
   context.fillStyle = "#0f172a";
   context.font = '700 46px Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif';
-  context.fillText(formatCurrencyJPY(total), 760, 378);
+  context.fillText(formatCurrencyJPY(total), 132, 604);
 
-  drawInvoiceRows(context, details.slice(0, 18), 88, 500);
+  const visibleDetails = details.slice(0, 12);
+  drawInvoiceRows(context, visibleDetails, 88, 710);
 
   context.fillStyle = "#f8fafc";
   context.fillRect(88, 1360, 1024, 86);
@@ -121,7 +121,7 @@ function drawInvoiceImage(
 
   context.fillStyle = "#64748b";
   context.font = '400 24px Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif';
-  const note = details.length > 18 ? `ほか ${details.length - 18} 件。詳細はPDF請求書をご確認ください。` : "詳細はPDF請求書もあわせてご確認ください。";
+  const note = details.length > visibleDetails.length ? `ほか ${details.length - visibleDetails.length} 件。詳細はPDF請求書をご確認ください。` : "詳細はPDF請求書もあわせてご確認ください。";
   context.fillText(note, 88, 1490);
 }
 

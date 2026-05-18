@@ -742,6 +742,7 @@ function StorePanel({
             <input
               className="field mt-1 w-full font-normal"
               {...numericInputAttributes}
+              type="text"
               value={form.display_order}
               onChange={(event) => updateForm({ ...form, display_order: normalizeIntegerInput(event.target.value) })}
             />
@@ -853,6 +854,7 @@ function PricePanel({
             <input
               className="field mt-1 w-full font-normal"
               {...numericInputAttributes}
+              type="text"
               value={form.unit_price}
               onChange={(event) => updateForm({ ...form, unit_price: normalizeIntegerInput(event.target.value) })}
             />
@@ -1442,7 +1444,11 @@ async function saveDeliveryStoreInput({
 }
 
 function normalizeIntegerInput(value: string) {
-  return value.replace(/\D/g, "");
+  return normalizeFullWidthDigits(value).replace(/\D/g, "");
+}
+
+function normalizeFullWidthDigits(value: string) {
+  return value.replace(/[０-９]/g, (digit) => String.fromCharCode(digit.charCodeAt(0) - 0xfee0));
 }
 
 function normalizeAlphaNumericInput(value: string) {

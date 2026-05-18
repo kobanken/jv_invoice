@@ -17,6 +17,7 @@ export default function BankSalesPage() {
         products={products}
         prices={bankCustomerPrices}
         initialSalesDetails={bankSalesDetails}
+        entryTarget="store"
       />
     </AppShell>
   );

@@ -7,7 +7,6 @@ import { useLiveCustomers } from "@/lib/api/customers";
 import { calculateSalesAmount } from "@/lib/invoices";
 import { getCustomerPrice } from "@/lib/prices";
 import { formatClosingDay, formatCurrencyJPY } from "@/lib/format";
-import { numericInputAttributes } from "@/lib/inputAttributes";
 
 type Props = {
   customerType: CustomerType;
@@ -15,6 +14,7 @@ type Props = {
   products: Product[];
   prices: CustomerPrice[];
   initialSalesDetails: SalesDetail[];
+  entryTarget?: "customer" | "store";
 };
 
 export function SalesEntryForm({
@@ -23,19 +23,24 @@ export function SalesEntryForm({
   products,
   prices,
   initialSalesDetails,
+  entryTarget = "customer",
 }: Props) {
   const { customers: liveCustomers, loading: customersLoading, error: customersError } = useLiveCustomers(customerType, customers);
-  const [customerId, setCustomerId] = useState(customers[0]?.customerId ?? "");
+  const usesStoreInput = entryTarget === "store";
+  const [customerId, setCustomerId] = useState(() => usesStoreInput ? "" : customers[0]?.customerId ?? "");
+  const [storeName, setStoreName] = useState("");
   const [productId, setProductId] = useState(products[0]?.productId ?? "");
   const [quantity, setQuantity] = useState(1);
-  const [targetMonth, setTargetMonth] = useState("2026-05");
-  const [deliveryDay, setDeliveryDay] = useState("31");
-  const [closingDay, setClosingDay] = useState<string>(String(customers[0]?.closingDay ?? "endOfMonth"));
+  const [targetMonth, setTargetMonth] = useState(() => getCurrentMonth());
+  const [deliveryDate, setDeliveryDate] = useState("");
+  const [closingDay, setClosingDay] = useState<string>(String(usesStoreInput ? "endOfMonth" : customers[0]?.closingDay ?? "endOfMonth"));
+  const [manualUnitPrice, setManualUnitPrice] = useState(0);
   const [details, setDetails] = useState<SalesDetail[]>(initialSalesDetails);
   const [hasLoadedSavedDetails, setHasLoadedSavedDetails] = useState(false);
   const storageKey = `jv-invoice:${customerType}:sales-details`;
 
   useEffect(() => {
+    if (usesStoreInput) return;
     const firstCustomer = liveCustomers[0];
     if (!firstCustomer) {
       setCustomerId("");
@@ -45,7 +50,7 @@ export function SalesEntryForm({
       setCustomerId(firstCustomer.customerId);
       setClosingDay(String(firstCustomer.closingDay));
     }
-  }, [customerId, liveCustomers]);
+  }, [customerId, liveCustomers, usesStoreInput]);
 
   useEffect(() => {
     try {
@@ -80,21 +85,27 @@ export function SalesEntryForm({
     }));
   }, [liveCustomers]);
   const selectedProduct = products.find((product) => product.productId === productId);
-  const selectedPrice = getCustomerPrice(prices, customerId, productId, targetMonth);
-  const unitPrice = selectedPrice?.unitPrice ?? 0;
+  const selectedPrice = usesStoreInput ? undefined : getCustomerPrice(prices, customerId, productId, targetMonth);
+  const unitPrice = usesStoreInput ? manualUnitPrice : selectedPrice?.unitPrice ?? 0;
   const amount = calculateSalesAmount(unitPrice, quantity);
-  const deliveryDate = formatDeliveryDateFromDay(targetMonth, deliveryDay);
+  const canAddDetail = Boolean(
+    selectedProduct &&
+    deliveryDate &&
+    quantity > 0 &&
+    (usesStoreInput ? storeName.trim() : selectedCustomer && selectedPrice),
+  );
 
   const visibleDetails = useMemo(() => {
     return details.filter((detail) => detail.customerType === customerType && detail.targetMonth === targetMonth);
   }, [customerType, details, targetMonth]);
 
   function addDetail() {
-    if (!selectedCustomer || !selectedProduct || !selectedPrice || !deliveryDay) return;
+    if (!canAddDetail || !selectedProduct) return;
     const now = new Date().toISOString().slice(0, 10);
     const nextDetail: SalesDetail = {
       salesId: `${customerType === "bank" ? "SB" : "SC"}-${Date.now()}`,
-      customerId,
+      customerId: usesStoreInput ? "" : customerId,
+      storeName: usesStoreInput ? storeName.trim() : selectedCustomer?.storeName,
       customerType,
       deliveryDate,
       productId,
@@ -117,40 +128,60 @@ export function SalesEntryForm({
     if (nextCustomer) setClosingDay(String(nextCustomer.closingDay));
   }
 
+  function handleTargetMonthChange(nextTargetMonth: string) {
+    setTargetMonth(nextTargetMonth);
+    setDeliveryDate((current) => moveDateToMonth(current, nextTargetMonth));
+  }
+
+  function handleDeliveryDateChange(nextDeliveryDate: string) {
+    setDeliveryDate(nextDeliveryDate);
+    if (nextDeliveryDate) setTargetMonth(nextDeliveryDate.slice(0, 7));
+  }
+
   return (
     <section className="grid gap-6 xl:grid-cols-[420px_1fr]">
       <div className="surface p-5">
         <h3 className="text-base font-bold">売上明細入力</h3>
         <div className="mt-4 space-y-4">
-          <CustomerSearchField
-            label="顧客"
-            value={customerId}
-            options={customerOptions}
-            onChange={handleCustomerChange}
-          />
-          {customersLoading ? <p className="text-xs text-slate-500">顧客マスタを読み込み中です。</p> : null}
-          {customersError ? <p className="text-xs text-amber-700">顧客マスタを取得できないため、既存データで表示しています。</p> : null}
+          {usesStoreInput ? (
+            <label className="block text-sm font-semibold">
+              店舗
+              <input
+                value={storeName}
+                onChange={(event) => setStoreName(event.target.value)}
+                placeholder="店舗名を入力"
+                className="field mt-1 w-full font-normal"
+              />
+            </label>
+          ) : (
+            <>
+              <CustomerSearchField
+                label="顧客"
+                value={customerId}
+                options={customerOptions}
+                onChange={handleCustomerChange}
+              />
+              {customersLoading ? <p className="text-xs text-slate-500">顧客マスタを読み込み中です。</p> : null}
+              {customersError ? <p className="text-xs text-amber-700">顧客マスタを取得できないため、既存データで表示しています。</p> : null}
+            </>
+          )}
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block text-sm font-semibold">
               対象月
               <input
                 type="month"
                 value={targetMonth}
-                onChange={(event) => {
-                  setTargetMonth(event.target.value);
-                  setDeliveryDay((current) => normalizeDayInput(current, event.target.value));
-                }}
+                onChange={(event) => handleTargetMonthChange(event.target.value)}
                 className="field mt-1 w-full font-normal"
               />
             </label>
             <label className="block text-sm font-semibold">
               納品日
               <input
-                {...numericInputAttributes}
-                placeholder="日"
-                value={deliveryDay}
-                onChange={(event) => setDeliveryDay(normalizeDayInput(event.target.value, targetMonth))}
-                className="field mt-1 w-full text-right font-normal"
+                type="date"
+                value={deliveryDate}
+                onChange={(event) => handleDeliveryDateChange(event.target.value)}
+                className="field mt-1 w-full font-normal"
               />
             </label>
           </div>
@@ -184,11 +215,22 @@ export function SalesEntryForm({
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="block text-sm font-semibold">
               単価
-              <input
-                value={selectedPrice ? formatCurrencyJPY(unitPrice) : "未設定"}
-                readOnly
-                className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 font-normal"
-              />
+              {usesStoreInput ? (
+                <input
+                  type="number"
+                  min="0"
+                  inputMode="numeric"
+                  value={manualUnitPrice}
+                  onChange={(event) => setManualUnitPrice(Number(event.target.value))}
+                  className="field mt-1 w-full font-normal"
+                />
+              ) : (
+                <input
+                  value={selectedPrice ? formatCurrencyJPY(unitPrice) : "未設定"}
+                  readOnly
+                  className="mt-1 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 font-normal"
+                />
+              )}
             </label>
             <label className="block text-sm font-semibold">
               数量
@@ -210,7 +252,7 @@ export function SalesEntryForm({
               />
             </label>
           </div>
-          {!selectedPrice ? (
+          {!usesStoreInput && !selectedPrice ? (
             <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
               この顧客・商品・対象月の単価が単価マスタにありません。
             </p>
@@ -218,7 +260,7 @@ export function SalesEntryForm({
           <button
             type="button"
             onClick={addDetail}
-            disabled={!selectedPrice || !deliveryDay}
+            disabled={!canAddDetail}
             className="w-full rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300"
           >
             明細に追加
@@ -238,7 +280,7 @@ export function SalesEntryForm({
           <thead className="bg-slate-50 text-xs font-semibold text-slate-600">
             <tr>
               <th className="px-4 py-3">納品日</th>
-              <th className="px-4 py-3">顧客ID</th>
+              <th className="px-4 py-3">{usesStoreInput ? "店舗" : "顧客ID"}</th>
               <th className="px-4 py-3">商品</th>
               <th className="px-4 py-3">締め日</th>
               <th className="px-4 py-3">単価</th>
@@ -250,7 +292,7 @@ export function SalesEntryForm({
             {visibleDetails.map((detail) => (
               <tr key={detail.salesId}>
                 <td className="px-4 py-3">{detail.deliveryDate}</td>
-                <td className="px-4 py-3 font-semibold">{detail.customerId}</td>
+                <td className="px-4 py-3 font-semibold">{detail.storeName ?? detail.customerId}</td>
                 <td className="px-4 py-3">{detail.productName}</td>
                 <td className="px-4 py-3">{formatClosingDay(detail.closingDay)}</td>
                 <td className="px-4 py-3">{formatCurrencyJPY(detail.unitPrice)}</td>
@@ -272,21 +314,19 @@ function parseClosingDay(value: string): ClosingDay {
   return "endOfMonth";
 }
 
-function normalizeDayInput(value: string, targetMonth: string) {
-  const numericValue = value.replace(/\D/g, "");
-  if (!numericValue) return "";
-  const day = Number(numericValue);
-  if (day < 1) return "";
-  return String(Math.min(day, getDaysInMonth(targetMonth)));
-}
-
 function getDaysInMonth(targetMonth: string) {
   const [year, month] = targetMonth.split("-").map(Number);
   if (!year || !month) return 31;
   return new Date(year, month, 0).getDate();
 }
 
-function formatDeliveryDateFromDay(targetMonth: string, day: string) {
-  if (!day) return "";
-  return `${targetMonth}-${day.padStart(2, "0")}`;
+function getCurrentMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function moveDateToMonth(value: string, targetMonth: string) {
+  if (!value || !targetMonth) return value;
+  const day = Math.min(Number(value.slice(8, 10)), getDaysInMonth(targetMonth));
+  return `${targetMonth}-${String(day).padStart(2, "0")}`;
 }

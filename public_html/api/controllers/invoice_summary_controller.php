@@ -98,6 +98,7 @@ function update_invoice_summary_status(): void
     $paymentStatus = isset($data['payment_status'])
         ? require_enum($data, 'payment_status', ['unpaid', 'partial', 'paid', 'overpaid'])
         : null;
+    $paymentDate = optional_date($data, 'payment_date');
     $statusNote = optional_string($data, 'status_note', 1000);
 
     $current = get_invoice_summary_by_id($id);
@@ -127,7 +128,9 @@ function update_invoice_summary_status(): void
         'payment_status' => $nextPaymentStatus,
         'issue_date' => $nextIssueStatus === 'issued' ? ($current['issue_date'] ?? $today) : null,
         'delivery_date' => $nextDeliveryStatus === 'delivered' ? ($current['delivery_date'] ?? $today) : null,
-        'payment_date' => in_array($nextPaymentStatus, ['paid', 'overpaid'], true) ? ($current['payment_date'] ?? $today) : null,
+        'payment_date' => in_array($nextPaymentStatus, ['partial', 'paid', 'overpaid'], true)
+            ? ($paymentDate ?? $current['payment_date'] ?? $today)
+            : null,
         'status_note' => $statusNote ?? $current['status_note'],
     ]);
 

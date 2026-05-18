@@ -65,6 +65,34 @@ input[type="number"]::-webkit-outer-spin-button {
   ime-mode: disabled;
 }
 
+.status-select-complete {
+  border-color: #5eead4;
+  background: #f0fdfa;
+  color: #115e59;
+  font-weight: 700;
+}
+
+.status-select-pending {
+  border-color: #fbbf24;
+  background: #fffbeb;
+  color: #92400e;
+  font-weight: 700;
+}
+
+.status-select-partial {
+  border-color: #60a5fa;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.status-select-overpaid {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-weight: 700;
+}
+
 .table-scroll {
   overflow-x: auto;
   border: 1px solid var(--line);

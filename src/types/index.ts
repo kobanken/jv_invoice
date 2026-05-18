@@ -64,6 +64,7 @@ export type CustomerPrice = {
 export type SalesDetail = {
   salesId: string;
   customerId: string;
+  storeName?: string;
   customerType: CustomerType;
   deliveryDate: string;
   productId: string;
@@ -134,5 +135,12 @@ export type PaymentCandidate = {
   customer: BankCustomer;
   invoice: Invoice;
   score: number;
+  scoreDetails: PaymentCandidateScoreDetail[];
   reasons: string[];
+};
+
+export type PaymentCandidateScoreDetail = {
+  label: string;
+  score: number;
+  maxScore: number;
 };

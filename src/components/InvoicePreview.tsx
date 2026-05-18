@@ -458,14 +458,20 @@ function InvoiceDocument({
     <div className="invoice-document invoice-document-invoice invoice-paper mx-auto min-h-[1123px] w-full max-w-[1120px] bg-white p-8 shadow-sm print:min-h-0 print:max-w-none print:p-0 print:shadow-none">
       <div className="flex items-start justify-between border-b-2 border-slate-900 pb-5 print:pb-3">
         <div>
-          <h3 className="text-3xl font-bold tracking-normal print:text-2xl">請求書</h3>
-          <p className="mt-4 text-xl font-bold print:mt-3 print:text-lg">{selectedCustomer?.billingName ?? "-"} 御中</p>
+          <p className="text-xl font-bold print:text-lg">{selectedCustomer?.billingName ?? "-"} 御中</p>
           <p className="mt-2 text-sm text-slate-600 print:text-xs">店舗: {storeLabel} / 請求月: {targetMonth}</p>
+          <div className="mt-5 print:mt-3">
+            <h3 className="text-3xl font-bold tracking-normal print:text-2xl">請求書</h3>
+            <div className="mt-3 inline-block bg-slate-50 px-5 py-4 print:mt-2 print:px-3 print:py-2">
+              <p className="text-sm font-semibold text-slate-600 print:text-[10px]">ご請求金額</p>
+              <p className="mt-2 text-3xl font-bold print:text-xl">{formatCurrencyJPY(total)}</p>
+            </div>
+          </div>
         </div>
         <div className="min-w-[320px] text-right text-sm text-slate-700 print:min-w-[240px] print:text-xs">
           <p>対象期間: {periodLabel}</p>
           <p>締日: {closingDayLabel}</p>
-          <p className="font-bold text-slate-950">支払い期限: {dueDate}</p>
+          <p className="font-bold text-slate-950">お支払い期限: {dueDate}</p>
           <p>発行日: {new Date().toISOString().slice(0, 10)}</p>
           <div className="mt-4 ml-auto flex h-20 w-28 items-center justify-center border border-dashed border-slate-400 text-xs text-slate-500 print:h-14 print:w-20 print:text-[9px]">
             社印
@@ -478,12 +484,8 @@ function InvoiceDocument({
         </div>
       </div>
 
-      <div className="mt-8 grid gap-4 border-b border-slate-200 pb-6 md:grid-cols-[1fr_320px] print:mt-5 print:grid-cols-[1fr_240px]">
+      <div className="mt-8 border-b border-slate-200 pb-6 print:mt-5">
         <p className="text-sm leading-7 text-slate-700 print:text-xs print:leading-5">下記の通りご請求申し上げます。</p>
-        <div className="bg-slate-50 px-5 py-4 print:px-3 print:py-2">
-          <p className="text-sm font-semibold text-slate-600 print:text-[10px]">ご請求金額</p>
-          <p className="mt-2 text-3xl font-bold print:text-xl">{formatCurrencyJPY(total)}</p>
-        </div>
       </div>
 
       {storeBlocks ? (
